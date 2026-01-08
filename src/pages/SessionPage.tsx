@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType } from '../db/database'
+import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType, type ServiceType, type LocationType } from '../db/database'
 import { formatDuration } from '../utils/time'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -46,6 +46,19 @@ export default function SessionPage() {
   const [activeTab, setActiveTab] = useState<BehaviorCategory>('acquisition')
   const [showABCModal, setShowABCModal] = useState<string | null>(null)
 
+  // Parent session note fields
+  const [sessionFocus, setSessionFocus] = useState('')
+  const [sessionLocation, setSessionLocation] = useState<LocationType | ''>('')
+  const [totalUnits, setTotalUnits] = useState<number | ''>('')
+  const [serviceType, setServiceType] = useState<ServiceType | ''>('')
+  const [parentParticipation, setParentParticipation] = useState<boolean | null>(null)
+  const [parentParticipationNotes, setParentParticipationNotes] = useState('')
+  const [protocolModification, setProtocolModification] = useState('')
+  const [protocolDescription, setProtocolDescription] = useState('')
+  const [familyTrainingDescription, setFamilyTrainingDescription] = useState('')
+  const [generalNotes, setGeneralNotes] = useState('')
+  const [showSessionNoteFields, setShowSessionNoteFields] = useState(false)
+
   const sessionTimerRef = useRef<number | undefined>(undefined)
   const behaviorTimersRef = useRef<Map<string, number>>(new Map())
   const intervalTimersRef = useRef<Map<string, number>>(new Map())
@@ -57,6 +70,10 @@ export default function SessionPage() {
       db.clients.get(clientId).then(c => {
         if (c) {
           setClient(c)
+          // Auto-fill session location from client profile
+          if (c.defaultSessionLocation) {
+            setSessionLocation(c.defaultSessionLocation)
+          }
           // Filter only active behaviors
           const activeBehaviors = c.targetBehaviors.filter(b => b.isActive !== false)
           setBehaviorStates(activeBehaviors.map(b => ({
@@ -126,11 +143,22 @@ export default function SessionPage() {
       behaviorData,
       notes,
       createdAt: sessionStartTime,
-      updatedAt: now
+      updatedAt: now,
+      // Parent session note fields
+      sessionFocus: sessionFocus || undefined,
+      sessionLocation: sessionLocation || undefined,
+      totalUnits: totalUnits ? Number(totalUnits) : undefined,
+      serviceType: serviceType || undefined,
+      parentParticipation: parentParticipation ?? undefined,
+      parentParticipationNotes: parentParticipationNotes || undefined,
+      protocolModification: protocolModification || undefined,
+      protocolDescription: protocolDescription || undefined,
+      familyTrainingDescription: familyTrainingDescription || undefined,
+      generalNotes: generalNotes || undefined
     }
 
     await db.sessions.put(session)
-  }, [client, behaviorStates, notes, sessionId, sessionStartTime])
+  }, [client, behaviorStates, notes, sessionId, sessionStartTime, sessionFocus, sessionLocation, totalUnits, serviceType, parentParticipation, parentParticipationNotes, protocolModification, protocolDescription, familyTrainingDescription, generalNotes])
 
   useEffect(() => {
     autoSaveRef.current = window.setInterval(() => {
@@ -370,6 +398,190 @@ export default function SessionPage() {
         <div className="session-timer">
           {formatDuration(elapsedMs)}
         </div>
+
+        {/* Session Note Fields Toggle */}
+        <button
+          className="btn btn-outline btn-block mb-3"
+          onClick={() => setShowSessionNoteFields(!showSessionNoteFields)}
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        >
+          <span>Session Note Details</span>
+          <span style={{ transform: showSessionNoteFields ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+            ▼
+          </span>
+        </button>
+
+        {/* Collapsible Session Note Fields */}
+        {showSessionNoteFields && (
+          <div className="card mb-3">
+            {/* Basic Info Row */}
+            <div className="flex gap-3 mb-3">
+              <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label htmlFor="sessionFocus">Session Focus</label>
+                <input
+                  type="text"
+                  id="sessionFocus"
+                  value={sessionFocus}
+                  onChange={e => setSessionFocus(e.target.value)}
+                  placeholder="Enter session focus..."
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mb-3">
+              <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label htmlFor="sessionLocation">Location</label>
+                <select
+                  id="sessionLocation"
+                  value={sessionLocation}
+                  onChange={e => setSessionLocation(e.target.value as LocationType | '')}
+                >
+                  <option value="">Select location...</option>
+                  <option value="Home">Home</option>
+                  <option value="Clinic">Clinic</option>
+                </select>
+              </div>
+              <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label htmlFor="totalUnits">Total Units</label>
+                <input
+                  type="number"
+                  id="totalUnits"
+                  value={totalUnits}
+                  onChange={e => setTotalUnits(e.target.value ? Number(e.target.value) : '')}
+                  placeholder="0"
+                  min={0}
+                />
+              </div>
+            </div>
+
+            {/* Service Type Selection */}
+            <div className="input-group mb-3">
+              <label>Service Type</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2" style={{ fontWeight: 'normal', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="serviceType"
+                    value="97155"
+                    checked={serviceType === '97155'}
+                    onChange={e => setServiceType(e.target.value as ServiceType)}
+                  />
+                  <span>97155 - Behavior Treatment with Protocol Modification (BCBA/BCaBA)</span>
+                </label>
+                <label className="flex items-center gap-2" style={{ fontWeight: 'normal', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="serviceType"
+                    value="97153"
+                    checked={serviceType === '97153'}
+                    onChange={e => setServiceType(e.target.value as ServiceType)}
+                  />
+                  <span>97153 - Behavior Treatment by Protocol (Direct service)</span>
+                </label>
+                <label className="flex items-center gap-2" style={{ fontWeight: 'normal', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="serviceType"
+                    value="97156"
+                    checked={serviceType === '97156'}
+                    onChange={e => setServiceType(e.target.value as ServiceType)}
+                  />
+                  <span>97156 - Family Training (BCBA/BCaBA)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Service-specific documentation */}
+            {serviceType === '97155' && (
+              <div className="input-group mb-3">
+                <label htmlFor="protocolModification">Description of Modification & Client Responses</label>
+                <textarea
+                  id="protocolModification"
+                  value={protocolModification}
+                  onChange={e => setProtocolModification(e.target.value)}
+                  placeholder="Describe modifications made to protocol and client responses..."
+                  style={{ minHeight: 100 }}
+                />
+              </div>
+            )}
+
+            {serviceType === '97153' && (
+              <div className="input-group mb-3">
+                <label htmlFor="protocolDescription">Activities, Protocol Description & Client Responses</label>
+                <textarea
+                  id="protocolDescription"
+                  value={protocolDescription}
+                  onChange={e => setProtocolDescription(e.target.value)}
+                  placeholder="Describe activities, protocol, and client responses..."
+                  style={{ minHeight: 100 }}
+                />
+              </div>
+            )}
+
+            {serviceType === '97156' && (
+              <div className="input-group mb-3">
+                <label htmlFor="familyTrainingDescription">Family Training Description</label>
+                <textarea
+                  id="familyTrainingDescription"
+                  value={familyTrainingDescription}
+                  onChange={e => setFamilyTrainingDescription(e.target.value)}
+                  placeholder="Describe family training provided..."
+                  style={{ minHeight: 100 }}
+                />
+              </div>
+            )}
+
+            {/* Parent Participation */}
+            <div className="input-group mb-3">
+              <label>Did Parent(s)/Caregiver(s) participate?</label>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2" style={{ fontWeight: 'normal', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="parentParticipation"
+                    checked={parentParticipation === true}
+                    onChange={() => setParentParticipation(true)}
+                  />
+                  <span>Yes</span>
+                </label>
+                <label className="flex items-center gap-2" style={{ fontWeight: 'normal', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="parentParticipation"
+                    checked={parentParticipation === false}
+                    onChange={() => setParentParticipation(false)}
+                  />
+                  <span>No</span>
+                </label>
+              </div>
+            </div>
+
+            {parentParticipation === false && (
+              <div className="input-group mb-3">
+                <label htmlFor="parentParticipationNotes">If No, why not?</label>
+                <input
+                  type="text"
+                  id="parentParticipationNotes"
+                  value={parentParticipationNotes}
+                  onChange={e => setParentParticipationNotes(e.target.value)}
+                  placeholder="Explain why parent/caregiver did not participate..."
+                />
+              </div>
+            )}
+
+            {/* General Notes */}
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="generalNotes">General Notes, Environmental Changes, Recommendations</label>
+              <textarea
+                id="generalNotes"
+                value={generalNotes}
+                onChange={e => setGeneralNotes(e.target.value)}
+                placeholder="Add general notes, environmental changes, recommendations..."
+                style={{ minHeight: 100 }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Acq/Decel Tabs */}
         {(acqBehaviors.length > 0 || decelBehaviors.length > 0) && (

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type BehaviorData } from '../db/database'
 import { formatDuration, formatDateTime } from '../utils/time'
-import { exportSessionToCSV, exportSessionToPDF, exportNotesToText } from '../utils/export'
+import { exportSessionToCSV, exportSessionToPDF, exportNotesToText, exportParentSessionNotePDF, exportParentSessionNoteDocx } from '../utils/export'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 
@@ -93,13 +93,91 @@ export default function SessionDetailPage() {
           <div className="text-secondary mb-2">
             {formatDateTime(session.startTime)}
           </div>
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
             <div>
               <span className="text-secondary">Duration: </span>
               <span className="font-bold">{formatDuration(session.durationMs ?? 0)}</span>
             </div>
+            {session.sessionLocation && (
+              <div>
+                <span className="text-secondary">Location: </span>
+                <span className="font-bold">{session.sessionLocation}</span>
+              </div>
+            )}
+            {session.totalUnits && (
+              <div>
+                <span className="text-secondary">Units: </span>
+                <span className="font-bold">{session.totalUnits}</span>
+              </div>
+            )}
           </div>
+          {session.sessionFocus && (
+            <div className="mt-2">
+              <span className="text-secondary">Session Focus: </span>
+              <span>{session.sessionFocus}</span>
+            </div>
+          )}
         </div>
+
+        {/* Session Note Details */}
+        {(session.serviceType || session.parentParticipation !== undefined || session.generalNotes) && (
+          <>
+            <h2 className="text-lg font-bold mb-2">Session Note Details</h2>
+            <div className="card mb-4">
+              {session.serviceType && (
+                <div className="mb-3">
+                  <span className="text-secondary">Service Type: </span>
+                  <span className="font-bold">
+                    {session.serviceType === '97155' && '97155 - Behavior Treatment with Protocol Modification'}
+                    {session.serviceType === '97153' && '97153 - Behavior Treatment by Protocol'}
+                    {session.serviceType === '97156' && '97156 - Family Training'}
+                  </span>
+                </div>
+              )}
+
+              {session.serviceType === '97155' && session.protocolModification && (
+                <div className="mb-3">
+                  <div className="text-sm text-secondary mb-1">Description of Modification & Client Responses:</div>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{session.protocolModification}</p>
+                </div>
+              )}
+
+              {session.serviceType === '97153' && session.protocolDescription && (
+                <div className="mb-3">
+                  <div className="text-sm text-secondary mb-1">Activities, Protocol Description & Client Responses:</div>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{session.protocolDescription}</p>
+                </div>
+              )}
+
+              {session.serviceType === '97156' && session.familyTrainingDescription && (
+                <div className="mb-3">
+                  <div className="text-sm text-secondary mb-1">Family Training Description:</div>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{session.familyTrainingDescription}</p>
+                </div>
+              )}
+
+              {session.parentParticipation !== undefined && (
+                <div className="mb-3">
+                  <span className="text-secondary">Parent/Caregiver Participation: </span>
+                  <span className="font-bold">{session.parentParticipation ? 'Yes' : 'No'}</span>
+                  {session.parentParticipation === false && session.parentParticipationNotes && (
+                    <div className="text-sm mt-1">
+                      <span className="text-secondary">Reason: </span>
+                      <span>{session.parentParticipationNotes}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {session.generalNotes && (
+                <div>
+                  <div className="text-sm text-secondary mb-1">General Notes, Environmental Changes, Recommendations:</div>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{session.generalNotes}</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         <h2 className="text-lg font-bold mb-2">Behavior Data</h2>
         <div className="session-summary-data mb-4">
@@ -259,8 +337,29 @@ export default function SessionDetailPage() {
         title="Export Session"
       >
         <div className="flex flex-col gap-3">
+          <div className="text-sm font-bold text-secondary mb-1">Parent Session Note</div>
           <button
             className="btn btn-primary btn-block"
+            onClick={() => {
+              exportParentSessionNotePDF(session, client)
+              setShowExportMenu(false)
+            }}
+          >
+            Export as PDF (for printing)
+          </button>
+          <button
+            className="btn btn-primary btn-block"
+            onClick={async () => {
+              await exportParentSessionNoteDocx(session, client)
+              setShowExportMenu(false)
+            }}
+          >
+            Export as Word Document
+          </button>
+
+          <div className="text-sm font-bold text-secondary mb-1 mt-3">Data Export</div>
+          <button
+            className="btn btn-outline btn-block"
             onClick={() => {
               exportSessionToCSV(session, client)
               setShowExportMenu(false)
@@ -269,13 +368,13 @@ export default function SessionDetailPage() {
             Export to CSV
           </button>
           <button
-            className="btn btn-primary btn-block"
+            className="btn btn-outline btn-block"
             onClick={() => {
               exportSessionToPDF(session, client)
               setShowExportMenu(false)
             }}
           >
-            Export to PDF
+            Export to PDF (data only)
           </button>
           {session.notes && (
             <button

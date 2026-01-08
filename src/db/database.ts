@@ -2,6 +2,8 @@ import Dexie, { type EntityTable } from 'dexie';
 
 export type DataType = 'frequency' | 'duration' | 'interval' | 'event' | 'deceleration';
 export type BehaviorCategory = 'acquisition' | 'deceleration';
+export type ServiceType = '97155' | '97153' | '97156';
+export type LocationType = 'Home' | 'Clinic';
 
 // Predefined ABC options
 export const ANTECEDENT_OPTIONS = [
@@ -51,6 +53,7 @@ export interface Client {
   phone?: string;
   address?: string;
   location?: string;
+  defaultSessionLocation?: LocationType;
   targetBehaviors: TargetBehavior[];
   createdAt: string;
   updatedAt: string;
@@ -89,6 +92,17 @@ export interface Session {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // Parent session note fields
+  sessionFocus?: string;
+  sessionLocation?: LocationType;
+  totalUnits?: number;
+  serviceType?: ServiceType;
+  parentParticipation?: boolean;
+  parentParticipationNotes?: string;
+  protocolModification?: string;
+  protocolDescription?: string;
+  familyTrainingDescription?: string;
+  generalNotes?: string;
 }
 
 const db = new Dexie('ABADataApp') as Dexie & {
@@ -108,6 +122,11 @@ db.version(2).stores({
       isActive: behavior.isActive ?? true
     }));
   });
+});
+
+db.version(3).stores({
+  clients: 'id, name, createdAt, updatedAt',
+  sessions: 'id, clientId, startTime, createdAt'
 });
 
 export { db };
