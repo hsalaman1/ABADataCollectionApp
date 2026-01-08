@@ -1,4 +1,10 @@
 import Dexie, { type EntityTable } from 'dexie';
+import type {
+  TreatmentPlan,
+  TreatmentGoal,
+  BehaviorDefinition,
+  ParentTrainingProgram,
+} from '../types/treatmentPlan';
 
 export type DataType = 'frequency' | 'duration' | 'interval' | 'event' | 'deceleration';
 export type BehaviorCategory = 'acquisition' | 'deceleration';
@@ -94,8 +100,13 @@ export interface Session {
 const db = new Dexie('ABADataApp') as Dexie & {
   clients: EntityTable<Client, 'id'>;
   sessions: EntityTable<Session, 'id'>;
+  treatmentPlans: EntityTable<TreatmentPlan, 'id'>;
+  treatmentGoals: EntityTable<TreatmentGoal, 'id'>;
+  behaviorDefinitions: EntityTable<BehaviorDefinition, 'id'>;
+  parentTrainingPrograms: EntityTable<ParentTrainingProgram, 'id'>;
 };
 
+// Version 2: Added behavior category field
 db.version(2).stores({
   clients: 'id, name, createdAt, updatedAt',
   sessions: 'id, clientId, startTime, createdAt'
@@ -110,4 +121,22 @@ db.version(2).stores({
   });
 });
 
+// Version 3: Added treatment plan tables
+db.version(3).stores({
+  clients: 'id, name, createdAt, updatedAt',
+  sessions: 'id, clientId, startTime, createdAt',
+  treatmentPlans: 'id, clientId, status, createdAt, updatedAt',
+  treatmentGoals: 'id, clientId, goalId, category, status, createdAt',
+  behaviorDefinitions: 'id, clientId, behaviorName, behaviorType, createdAt',
+  parentTrainingPrograms: 'id, clientId, programId, status, createdAt'
+});
+
 export { db };
+
+// Re-export types for convenience
+export type {
+  TreatmentPlan,
+  TreatmentGoal,
+  BehaviorDefinition,
+  ParentTrainingProgram,
+} from '../types/treatmentPlan';
