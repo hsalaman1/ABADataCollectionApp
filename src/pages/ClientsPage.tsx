@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { v4 as uuidv4 } from 'uuid'
 import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory } from '../db/database'
+import { pushClient, deleteClientRemote, deleteSessionRemote } from '../lib/sync'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 
@@ -81,8 +82,14 @@ export default function ClientsPage() {
 
   const handleDelete = async () => {
     if (deleteClient) {
+      const clientSessions = await db.sessions.where('clientId').equals(deleteClient.id).toArray()
       await db.sessions.where('clientId').equals(deleteClient.id).delete()
       await db.clients.delete(deleteClient.id)
+      // Propagate to Supabase (queues if offline).
+      for (const session of clientSessions) {
+        void deleteSessionRemote(session.id)
+      }
+      void deleteClientRemote(deleteClient.id)
       if (selectedClient?.id === deleteClient.id) {
         setSelectedClient(null)
       }
@@ -160,17 +167,7 @@ export default function ClientsPage() {
     }))
 
     if (selectedClient) {
-      await db.clients.update(selectedClient.id, {
-        name: name.trim(),
-        dateOfBirth: dateOfBirth || undefined,
-        phone: phone || undefined,
-        address: address || undefined,
-        location: location || undefined,
-        targetBehaviors,
-        updatedAt: now
-      })
-      // Update local state
-      setSelectedClient({
+      const updated: Client = {
         ...selectedClient,
         name: name.trim(),
         dateOfBirth: dateOfBirth || undefined,
@@ -179,7 +176,10 @@ export default function ClientsPage() {
         location: location || undefined,
         targetBehaviors,
         updatedAt: now
-      })
+      }
+      await db.clients.put(updated)
+      setSelectedClient(updated)
+      void pushClient(updated)
     } else {
       const newClient: Client = {
         id: uuidv4(),
@@ -194,6 +194,7 @@ export default function ClientsPage() {
       }
       await db.clients.add(newClient)
       setSelectedClient(newClient)
+      void pushClient(newClient)
     }
   }
 

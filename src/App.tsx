@@ -1,28 +1,109 @@
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom'
 import ClientsPage from './pages/ClientsPage'
 import SessionPage from './pages/SessionPage'
 import DataPage from './pages/DataPage'
 import ClientFormPage from './pages/ClientFormPage'
 import SelectClientPage from './pages/SelectClientPage'
 import SessionDetailPage from './pages/SessionDetailPage'
+import LoginPage from './pages/LoginPage'
+import { useAuth } from './lib/useAuth'
+import { migrateLocalToCloud, pullAll, flushQueue } from './lib/sync'
+import { isSupabaseConfigured } from './lib/supabase'
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth()
+  const location = useLocation()
+
+  if (!isSupabaseConfigured) {
+    // Fall back to local-only mode when Supabase is not configured so
+    // developers can still work on unrelated UI without env vars.
+    return <>{children}</>
+  }
+
+  if (loading) {
+    return <div style={{ padding: 24 }}>Loading…</div>
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  }
+
+  return <>{children}</>
+}
 
 function App() {
   const location = useLocation()
-  const hideNav = location.pathname.includes('/session/') && !location.pathname.includes('/session/select')
+  const { user, signOut } = useAuth()
+  const hideNav =
+    location.pathname === '/login' ||
+    (location.pathname.includes('/session/') && !location.pathname.includes('/session/select'))
+
+  const [syncing, setSyncing] = useState(false)
+
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured) return
+
+    let cancelled = false
+    const run = async () => {
+      setSyncing(true)
+      try {
+        await migrateLocalToCloud(user.id)
+        await flushQueue()
+        await pullAll(user.id)
+      } finally {
+        if (!cancelled) setSyncing(false)
+      }
+    }
+    run()
+
+    const onOnline = () => {
+      flushQueue().then(() => pullAll(user.id))
+    }
+    window.addEventListener('online', onOnline)
+
+    return () => {
+      cancelled = true
+      window.removeEventListener('online', onOnline)
+    }
+  }, [user])
 
   return (
     <>
+      {syncing && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            background: '#2563eb',
+            color: 'white',
+            padding: '4px 12px',
+            fontSize: 12,
+            textAlign: 'center',
+            zIndex: 1000,
+          }}
+        >
+          Syncing…
+        </div>
+      )}
+
       <main className="main-content">
         <Routes>
-          <Route path="/" element={<ClientsPage />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/clients/new" element={<ClientFormPage />} />
-          <Route path="/clients/:id/edit" element={<ClientFormPage />} />
-          <Route path="/session/select" element={<SelectClientPage />} />
-          <Route path="/session/:clientId" element={<SessionPage />} />
-          <Route path="/data" element={<DataPage />} />
-          <Route path="/data/:clientId" element={<DataPage />} />
-          <Route path="/data/:clientId/session/:sessionId" element={<SessionDetailPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<RequireAuth><ClientsPage /></RequireAuth>} />
+          <Route path="/clients" element={<RequireAuth><ClientsPage /></RequireAuth>} />
+          <Route path="/clients/new" element={<RequireAuth><ClientFormPage /></RequireAuth>} />
+          <Route path="/clients/:id/edit" element={<RequireAuth><ClientFormPage /></RequireAuth>} />
+          <Route path="/session/select" element={<RequireAuth><SelectClientPage /></RequireAuth>} />
+          <Route path="/session/:clientId" element={<RequireAuth><SessionPage /></RequireAuth>} />
+          <Route path="/data" element={<RequireAuth><DataPage /></RequireAuth>} />
+          <Route path="/data/:clientId" element={<RequireAuth><DataPage /></RequireAuth>} />
+          <Route
+            path="/data/:clientId/session/:sessionId"
+            element={<RequireAuth><SessionDetailPage /></RequireAuth>}
+          />
         </Routes>
       </main>
 
@@ -52,6 +133,31 @@ function App() {
             </svg>
             Data
           </NavLink>
+          {user && isSupabaseConfigured && (
+            <button
+              type="button"
+              onClick={() => { signOut() }}
+              className="sign-out-btn"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'inherit',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                cursor: 'pointer',
+                padding: 0,
+                font: 'inherit',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Sign out
+            </button>
+          )}
         </nav>
       )}
     </>
