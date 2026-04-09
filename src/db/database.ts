@@ -97,6 +97,19 @@ export interface Session {
   updatedAt: string;
 }
 
+export type SyncEntity = 'client' | 'session';
+export type SyncOpType = 'upsert' | 'delete';
+
+export interface SyncQueueItem {
+  id?: number;
+  entity: SyncEntity;
+  opType: SyncOpType;
+  // For upserts we store the full row so it can be replayed offline; for
+  // deletes we store just the id.
+  payload: unknown;
+  createdAt: string;
+}
+
 const db = new Dexie('ABADataApp') as Dexie & {
   clients: EntityTable<Client, 'id'>;
   sessions: EntityTable<Session, 'id'>;
@@ -104,6 +117,7 @@ const db = new Dexie('ABADataApp') as Dexie & {
   treatmentGoals: EntityTable<TreatmentGoal, 'id'>;
   behaviorDefinitions: EntityTable<BehaviorDefinition, 'id'>;
   parentTrainingPrograms: EntityTable<ParentTrainingProgram, 'id'>;
+  syncQueue: EntityTable<SyncQueueItem, 'id'>;
 };
 
 // Version 2: Added behavior category field
@@ -129,6 +143,17 @@ db.version(3).stores({
   treatmentGoals: 'id, clientId, goalId, category, status, createdAt',
   behaviorDefinitions: 'id, clientId, behaviorName, behaviorType, createdAt',
   parentTrainingPrograms: 'id, clientId, programId, status, createdAt'
+});
+
+// Version 4: Added syncQueue table for offline-first Supabase sync
+db.version(4).stores({
+  clients: 'id, name, createdAt, updatedAt',
+  sessions: 'id, clientId, startTime, createdAt',
+  treatmentPlans: 'id, clientId, status, createdAt, updatedAt',
+  treatmentGoals: 'id, clientId, goalId, category, status, createdAt',
+  behaviorDefinitions: 'id, clientId, behaviorName, behaviorType, createdAt',
+  parentTrainingPrograms: 'id, clientId, programId, status, createdAt',
+  syncQueue: '++id, entity, opType, createdAt'
 });
 
 export { db };

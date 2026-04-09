@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType } from '../db/database'
+import { pushSession } from '../lib/sync'
 import { formatDuration } from '../utils/time'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -130,6 +131,9 @@ export default function SessionPage() {
     }
 
     await db.sessions.put(session)
+    // Fire-and-forget: never block the live session on a network hiccup.
+    // pushSession handles its own errors (queues to syncQueue on failure).
+    void pushSession(session)
   }, [client, behaviorStates, notes, sessionId, sessionStartTime])
 
   useEffect(() => {

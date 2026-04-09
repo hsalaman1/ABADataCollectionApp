@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory } from '../db/database'
+import { pushClient } from '../lib/sync'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 
@@ -128,7 +129,8 @@ export default function ClientFormPage() {
     if (isEditing && id) {
       const existing = await db.clients.get(id)
       if (existing) {
-        await db.clients.update(id, {
+        const updated: Client = {
+          ...existing,
           name: name.trim(),
           dateOfBirth: dateOfBirth || undefined,
           phone: phone || undefined,
@@ -136,7 +138,9 @@ export default function ClientFormPage() {
           location: location || undefined,
           targetBehaviors,
           updatedAt: now
-        })
+        }
+        await db.clients.put(updated)
+        void pushClient(updated)
       }
     } else {
       const client: Client = {
@@ -151,6 +155,7 @@ export default function ClientFormPage() {
         updatedAt: now
       }
       await db.clients.add(client)
+      void pushClient(client)
     }
 
     navigate('/clients')
