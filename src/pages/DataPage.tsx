@@ -7,6 +7,7 @@ import { formatDate, formatDuration } from '../utils/time'
 import { exportClientDataToCSV } from '../utils/export'
 import Modal from '../components/Modal'
 import { v4 as uuidv4 } from 'uuid'
+import { checkBehaviorMastery } from '../utils/masteryCalculations'
 
 interface ManualSessionData {
   date: string
@@ -100,6 +101,19 @@ export default function DataPage() {
       return true
     })
   }, [sessions, sessionDateFrom, sessionDateTo, sessionNotesQuery])
+
+  const masteryStatuses = useMemo(() => {
+    if (!selectedClient || !sessions) return new Map<string, { met: boolean; streak: number; nextSto?: string }>()
+    const map = new Map<string, { met: boolean; streak: number; nextSto?: string }>()
+    for (const b of selectedClient.targetBehaviors) {
+      if (!b.masteryCriteria) continue
+      const status = checkBehaviorMastery(sessions, b.id, b.masteryCriteria)
+      const activeSto = b.stos?.find(s => s.id === b.currentStoId && s.status === 'active')
+        ?? b.stos?.find(s => s.status === 'active')
+      map.set(b.id, { met: status.met, streak: status.streak, nextSto: activeSto?.description })
+    }
+    return map
+  }, [selectedClient, sessions])
 
   const selectedBehavior = selectedClient?.targetBehaviors.find(b => b.id === selectedBehaviorId)
   const behaviorsToChart = selectedBehavior
@@ -280,16 +294,24 @@ export default function DataPage() {
                   >
                     All Behaviors
                   </button>
-                  {selectedClient.targetBehaviors.map(b => (
-                    <button
-                      key={b.id}
-                      className={`chip ${selectedBehaviorId === b.id ? 'chip-primary' : ''}`}
-                      onClick={() => setSelectedBehaviorId(b.id)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      {b.name}
-                    </button>
-                  ))}
+                  {selectedClient.targetBehaviors.map(b => {
+                    const ms = masteryStatuses.get(b.id)
+                    return (
+                      <button
+                        key={b.id}
+                        className={`chip ${selectedBehaviorId === b.id ? 'chip-primary' : ''}`}
+                        onClick={() => setSelectedBehaviorId(b.id)}
+                        style={{ cursor: 'pointer', gap: 4 }}
+                      >
+                        {b.name}
+                        {ms && (
+                          <span title={ms.nextSto ? `STO: ${ms.nextSto}` : undefined} style={{ fontSize: 10, marginLeft: 4, color: ms.met ? 'var(--success)' : 'var(--text-secondary)' }}>
+                            {ms.met ? '★ mastered' : `${ms.streak}/${b.masteryCriteria?.consecutiveSessions ?? 3}`}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}

@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
 import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType, type Trial, type PromptLevel, type TaskAnalysisStep, type TaskAnalysisTrial, type TaskAnalysisStepResult, type ChainingType, PROMPT_LABELS, PROMPT_ORDER } from '../db/database'
+import { advanceSTOIfMastered } from '../utils/masteryCalculations'
+import { useToast } from '../components/Toast'
 import { formatDuration } from '../utils/time'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -46,6 +48,7 @@ interface BehaviorState {
 export default function SessionPage() {
   const navigate = useNavigate()
   const { clientId } = useParams()
+  const toast = useToast()
 
   const [client, setClient] = useState<Client | null>(null)
   const [sessionId] = useState(uuidv4())
@@ -389,6 +392,32 @@ export default function SessionPage() {
     if (sessionTimerRef.current) clearInterval(sessionTimerRef.current)
 
     await saveSession(true)
+
+    // Check mastery auto-advance for all behaviors with STOs
+    if (client) {
+      const allSessions = await db.sessions.where('clientId').equals(client.id).toArray()
+      const updatedBehaviors = [...client.targetBehaviors]
+      let anyAdvanced = false
+
+      for (let i = 0; i < updatedBehaviors.length; i++) {
+        const b = updatedBehaviors[i]
+        if (!b.masteryCriteria || !b.stos?.length) continue
+        const result = advanceSTOIfMastered(b, allSessions)
+        if (result.advanced) {
+          updatedBehaviors[i] = result.updatedBehavior
+          anyAdvanced = true
+          const msg = result.nextSto
+            ? `🎉 "${b.name}" mastered! Now on: ${result.nextSto.description}`
+            : `🎉 "${b.name}" — all STOs mastered!`
+          toast.success(msg)
+        }
+      }
+
+      if (anyAdvanced) {
+        await db.clients.update(client.id, { targetBehaviors: updatedBehaviors, updatedAt: new Date().toISOString() })
+      }
+    }
+
     navigate('/data')
   }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory, type TaskAnalysisStep, type ChainingType } from '../db/database'
+import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory, type TaskAnalysisStep, type ChainingType, type MasteryCriteria, type BehaviorSTO } from '../db/database'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 
@@ -17,6 +17,9 @@ interface BehaviorFormData {
     chainingType: ChainingType
     currentStep?: number
   }
+  masteryCriteria?: MasteryCriteria
+  stos?: BehaviorSTO[]
+  currentStoId?: string
 }
 
 export default function ClientFormPage() {
@@ -44,6 +47,13 @@ export default function ClientFormPage() {
   const [taChaining, setTaChaining] = useState<ChainingType>('total_task')
   const [taCurrentStep, setTaCurrentStep] = useState<number>(1)
   const [taNewStep, setTaNewStep] = useState('')
+  // Mastery criteria fields
+  const [masteryEnabled, setMasteryEnabled] = useState(false)
+  const [masteryPct, setMasteryPct] = useState(80)
+  const [masteryConsecutive, setMasteryConsecutive] = useState(3)
+  const [masteryMetric, setMasteryMetric] = useState<'independent' | 'correct'>('independent')
+  const [stos, setStos] = useState<BehaviorSTO[]>([])
+  const [stoNewDesc, setStoNewDesc] = useState('')
 
   useEffect(() => {
     if (id) {
@@ -74,6 +84,11 @@ export default function ClientFormPage() {
       setTaSteps(behavior.taskAnalysis?.steps ?? [])
       setTaChaining(behavior.taskAnalysis?.chainingType ?? 'total_task')
       setTaCurrentStep(behavior.taskAnalysis?.currentStep ?? 1)
+      setMasteryEnabled(!!behavior.masteryCriteria)
+      setMasteryPct(behavior.masteryCriteria?.percentage ?? 80)
+      setMasteryConsecutive(behavior.masteryCriteria?.consecutiveSessions ?? 3)
+      setMasteryMetric(behavior.masteryCriteria?.metric ?? 'independent')
+      setStos(behavior.stos ?? [])
     } else {
       setEditingBehavior(null)
       setBehaviorName('')
@@ -81,6 +96,11 @@ export default function ClientFormPage() {
       setTaSteps([])
       setTaChaining('total_task')
       setTaCurrentStep(1)
+      setMasteryEnabled(false)
+      setMasteryPct(80)
+      setMasteryConsecutive(3)
+      setMasteryMetric('independent')
+      setStos([])
       // Set defaults based on current tab
       if (behaviorTab === 'deceleration') {
         setBehaviorType('deceleration')
@@ -121,6 +141,11 @@ export default function ClientFormPage() {
       taskAnalysis: behaviorType === 'task_analysis' && taSteps.length > 0
         ? { steps: taSteps, chainingType: taChaining, currentStep: taCurrentStep }
         : undefined,
+      masteryCriteria: masteryEnabled
+        ? { percentage: masteryPct, consecutiveSessions: masteryConsecutive, metric: masteryMetric }
+        : undefined,
+      stos: masteryEnabled ? stos : undefined,
+      currentStoId: masteryEnabled ? (stos.find(s => s.status === 'active')?.id ?? stos[0]?.id) : undefined,
     }
 
     if (editingBehavior) {
@@ -157,7 +182,10 @@ export default function ClientFormPage() {
       dataType: b.dataType,
       category: b.category,
       isActive: b.isActive,
-      taskAnalysis: b.taskAnalysis
+      taskAnalysis: b.taskAnalysis,
+      masteryCriteria: b.masteryCriteria,
+      stos: b.stos,
+      currentStoId: b.currentStoId,
     }))
 
     if (isEditing && id) {
@@ -513,6 +541,77 @@ export default function ClientFormPage() {
               </div>
             </div>
           </>
+        )}
+
+        {/* Mastery criteria — only for event & task_analysis */}
+        {(behaviorType === 'event' || behaviorType === 'task_analysis') && (
+          <div className="input-group mt-2" style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={masteryEnabled} onChange={e => setMasteryEnabled(e.target.checked)} style={{ width: 18, height: 18 }} />
+              <span>Enable mastery criteria</span>
+            </label>
+            {masteryEnabled && (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Metric</label>
+                    <select value={masteryMetric} onChange={e => setMasteryMetric(e.target.value as 'independent' | 'correct')} style={{ width: '100%' }}>
+                      <option value="independent">% Independent</option>
+                      <option value="correct">% Correct</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Target %</label>
+                    <input type="number" value={masteryPct} min={1} max={100} onChange={e => setMasteryPct(Number(e.target.value))} style={{ width: '100%' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Sessions</label>
+                    <input type="number" value={masteryConsecutive} min={1} max={10} onChange={e => setMasteryConsecutive(Number(e.target.value))} style={{ width: '100%' }} />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Short-Term Objectives ({stos.length})</label>
+                  {stos.map((sto, idx) => (
+                    <div key={sto.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: sto.status === 'mastered' ? 'var(--success)' : 'var(--primary)', minWidth: 14 }}>{idx + 1}.</span>
+                      <span style={{ flex: 1, fontSize: 13, textDecoration: sto.status === 'mastered' ? 'line-through' : 'none', color: sto.status === 'mastered' ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{sto.description}</span>
+                      {sto.status === 'mastered' && <span style={{ fontSize: 10, color: 'var(--success)' }}>✓ Mastered</span>}
+                      <button type="button" onClick={() => setStos(prev => prev.filter(s => s.id !== sto.id))} style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, fontSize: 12 }}>✕</button>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <input
+                      type="text"
+                      value={stoNewDesc}
+                      onChange={e => setStoNewDesc(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          const desc = stoNewDesc.trim()
+                          if (!desc) return
+                          setStos(prev => [...prev, { id: uuidv4(), description: desc, criteria: { percentage: masteryPct, consecutiveSessions: masteryConsecutive, metric: masteryMetric }, status: prev.length === 0 ? 'active' : 'active' }])
+                          setStoNewDesc('')
+                        }
+                      }}
+                      placeholder="Add STO description…"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button" className="btn btn-outline"
+                      onClick={() => {
+                        const desc = stoNewDesc.trim()
+                        if (!desc) return
+                        setStos(prev => [...prev, { id: uuidv4(), description: desc, criteria: { percentage: masteryPct, consecutiveSessions: masteryConsecutive, metric: masteryMetric }, status: 'active' }])
+                        setStoNewDesc('')
+                      }}
+                      style={{ padding: '8px 14px', minHeight: 'auto' }}
+                    >Add</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </Modal>
 
