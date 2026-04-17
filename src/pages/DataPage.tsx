@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { db, type Session, type BehaviorData } from '../db/database'
 import { formatDate, formatDuration } from '../utils/time'
-import { exportClientDataToCSV } from '../utils/export'
+import { exportClientDataToCSV, getBehaviorValue } from '../utils/export'
 import Modal from '../components/Modal'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -88,28 +88,6 @@ export default function DataPage() {
     : selectedClient?.targetBehaviors || []
 
   const colors = ['#1976d2', '#2e7d32', '#f57c00', '#d32f2f', '#7b1fa2', '#00838f']
-
-  const getBehaviorValue = (data: BehaviorData): string => {
-    switch (data.dataType) {
-      case 'frequency':
-        return String(data.count ?? 0)
-      case 'duration':
-        return formatDuration(data.totalDurationMs ?? 0)
-      case 'interval':
-        if (!data.intervals || data.intervals.length === 0) return '0%'
-        const occurrences = data.intervals.filter(Boolean).length
-        const percentage = Math.round((occurrences / data.intervals.length) * 100)
-        return `${percentage}%`
-      case 'event':
-        if (!data.trials || data.trials.length === 0) return '0/0 (0%)'
-        const correct = data.trials.filter(Boolean).length
-        const total = data.trials.length
-        const pct = Math.round((correct / total) * 100)
-        return `${correct}/${total} (${pct}%)`
-      default:
-        return '-'
-    }
-  }
 
   const openAddSession = () => {
     if (!selectedClient) return

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, type BehaviorData } from '../db/database'
+import { db } from '../db/database'
 import { formatDuration, formatDateTime } from '../utils/time'
-import { exportSessionToCSV, exportSessionToPDF, exportNotesToText } from '../utils/export'
+import { exportSessionToCSV, exportSessionToPDF, exportNotesToText, getBehaviorValue } from '../utils/export'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 
@@ -28,33 +28,6 @@ export default function SessionDetailPage() {
     if (sessionId) {
       await db.sessions.delete(sessionId)
       navigate(`/data/${clientId}`)
-    }
-  }
-
-  const getBehaviorValue = (data: BehaviorData): string => {
-    switch (data.dataType) {
-      case 'frequency':
-        return String(data.count ?? 0)
-      case 'duration':
-        return formatDuration(data.totalDurationMs ?? 0)
-      case 'interval':
-        if (!data.intervals || data.intervals.length === 0) return '0%'
-        const occurrences = data.intervals.filter(Boolean).length
-        const percentage = Math.round((occurrences / data.intervals.length) * 100)
-        return `${percentage}% (${occurrences}/${data.intervals.length})`
-      case 'event':
-        if (!data.trials || data.trials.length === 0) return '0/0 (0%)'
-        const correct = data.trials.filter(Boolean).length
-        const total = data.trials.length
-        const pct = Math.round((correct / total) * 100)
-        return `${correct}/${total} (${pct}%)`
-      case 'deceleration':
-        const count = data.decelCount ?? 0
-        const duration = formatDuration(data.decelDurationMs ?? 0)
-        const abcCount = data.abcRecords?.length ?? 0
-        return `${count}x / ${duration} / ${abcCount} ABC`
-      default:
-        return '-'
     }
   }
 

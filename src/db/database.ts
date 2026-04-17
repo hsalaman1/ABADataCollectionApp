@@ -50,18 +50,6 @@ export interface TargetBehavior {
   isActive?: boolean;
 }
 
-export interface Client {
-  id: string;
-  name: string;
-  dateOfBirth?: string;
-  phone?: string;
-  address?: string;
-  location?: string;
-  targetBehaviors: TargetBehavior[];
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface BehaviorData {
   behaviorId: string;
   behaviorName: string;
@@ -95,6 +83,26 @@ export interface Session {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // Milestone 1: sync fields
+  syncedAt?: string | null;
+  isDeleted?: boolean;
+  // Milestone 3: session enhancements
+  isInProgress?: boolean;
+  source?: 'live' | 'manual';
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  dateOfBirth?: string;
+  phone?: string;
+  address?: string;
+  location?: string;
+  targetBehaviors: TargetBehavior[];
+  createdAt: string;
+  updatedAt: string;
+  syncedAt?: string | null;
+  isDeleted?: boolean;
 }
 
 const db = new Dexie('ABADataApp') as Dexie & {
@@ -129,6 +137,16 @@ db.version(3).stores({
   treatmentGoals: 'id, clientId, goalId, category, status, createdAt',
   behaviorDefinitions: 'id, clientId, behaviorName, behaviorType, createdAt',
   parentTrainingPrograms: 'id, clientId, programId, status, createdAt'
+});
+
+// Version 4: Supabase sync fields + session enhancements
+db.version(4).stores({
+  clients: 'id, name, createdAt, updatedAt, syncedAt, isDeleted',
+  sessions: 'id, clientId, startTime, createdAt, syncedAt, isDeleted, isInProgress',
+  treatmentPlans: 'id, clientId, status, createdAt, updatedAt, syncedAt',
+  treatmentGoals: 'id, clientId, goalId, category, status, createdAt, syncedAt',
+  behaviorDefinitions: 'id, clientId, behaviorName, behaviorType, createdAt, syncedAt',
+  parentTrainingPrograms: 'id, clientId, programId, status, createdAt, syncedAt'
 });
 
 export { db };

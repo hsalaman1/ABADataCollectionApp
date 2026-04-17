@@ -9,7 +9,7 @@ declare module 'jspdf' {
   }
 }
 
-function getBehaviorValue(data: BehaviorData): string {
+export function getBehaviorValue(data: BehaviorData): string {
   switch (data.dataType) {
     case 'frequency':
       return String(data.count ?? 0)
