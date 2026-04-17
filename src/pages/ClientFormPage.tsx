@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory } from '../db/database'
+import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory, type TaskAnalysisStep, type ChainingType } from '../db/database'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 
@@ -12,6 +12,11 @@ interface BehaviorFormData {
   dataType: DataType
   category: BehaviorCategory
   isActive: boolean
+  taskAnalysis?: {
+    steps: TaskAnalysisStep[]
+    chainingType: ChainingType
+    currentStep?: number
+  }
 }
 
 export default function ClientFormPage() {
@@ -34,6 +39,11 @@ export default function ClientFormPage() {
   const [behaviorType, setBehaviorType] = useState<DataType>('frequency')
   const [behaviorCategory, setBehaviorCategory] = useState<BehaviorCategory>('acquisition')
   const [deleteBehavior, setDeleteBehavior] = useState<BehaviorFormData | null>(null)
+  // Task analysis fields
+  const [taSteps, setTaSteps] = useState<TaskAnalysisStep[]>([])
+  const [taChaining, setTaChaining] = useState<ChainingType>('total_task')
+  const [taCurrentStep, setTaCurrentStep] = useState<number>(1)
+  const [taNewStep, setTaNewStep] = useState('')
 
   useEffect(() => {
     if (id) {
@@ -61,10 +71,16 @@ export default function ClientFormPage() {
       setBehaviorDefinition(behavior.definition)
       setBehaviorType(behavior.dataType)
       setBehaviorCategory(behavior.category)
+      setTaSteps(behavior.taskAnalysis?.steps ?? [])
+      setTaChaining(behavior.taskAnalysis?.chainingType ?? 'total_task')
+      setTaCurrentStep(behavior.taskAnalysis?.currentStep ?? 1)
     } else {
       setEditingBehavior(null)
       setBehaviorName('')
       setBehaviorDefinition('')
+      setTaSteps([])
+      setTaChaining('total_task')
+      setTaCurrentStep(1)
       // Set defaults based on current tab
       if (behaviorTab === 'deceleration') {
         setBehaviorType('deceleration')
@@ -74,7 +90,22 @@ export default function ClientFormPage() {
         setBehaviorCategory('acquisition')
       }
     }
+    setTaNewStep('')
     setShowBehaviorModal(true)
+  }
+
+  const addTaStep = () => {
+    const desc = taNewStep.trim()
+    if (!desc) return
+    setTaSteps(prev => [...prev, { stepNumber: prev.length + 1, description: desc }])
+    setTaNewStep('')
+  }
+
+  const removeTaStep = (stepNumber: number) => {
+    setTaSteps(prev => {
+      const filtered = prev.filter(s => s.stepNumber !== stepNumber)
+      return filtered.map((s, i) => ({ ...s, stepNumber: i + 1 }))
+    })
   }
 
   const saveBehavior = () => {
@@ -86,7 +117,10 @@ export default function ClientFormPage() {
       definition: behaviorDefinition.trim(),
       dataType: behaviorType,
       category: behaviorCategory,
-      isActive: editingBehavior?.isActive ?? true
+      isActive: editingBehavior?.isActive ?? true,
+      taskAnalysis: behaviorType === 'task_analysis' && taSteps.length > 0
+        ? { steps: taSteps, chainingType: taChaining, currentStep: taCurrentStep }
+        : undefined,
     }
 
     if (editingBehavior) {
@@ -122,7 +156,8 @@ export default function ClientFormPage() {
       definition: b.definition,
       dataType: b.dataType,
       category: b.category,
-      isActive: b.isActive
+      isActive: b.isActive,
+      taskAnalysis: b.taskAnalysis
     }))
 
     if (isEditing && id) {
@@ -413,6 +448,7 @@ export default function ClientFormPage() {
             {behaviorCategory === 'acquisition' ? (
               <>
                 <option value="event">Event Recording (trials +/- for acquisition)</option>
+                <option value="task_analysis">Task Analysis (step-by-step chain)</option>
                 <option value="frequency">Frequency (count occurrences)</option>
                 <option value="duration">Duration (time the behavior lasts)</option>
                 <option value="interval">Interval (occurrence each interval)</option>
@@ -427,6 +463,57 @@ export default function ClientFormPage() {
             </p>
           )}
         </div>
+
+        {behaviorType === 'task_analysis' && (
+          <>
+            <div className="input-group mt-2">
+              <label>Chaining Method</label>
+              <div className="radio-group">
+                {(['total_task', 'forward', 'backward'] as ChainingType[]).map(ct => (
+                  <label key={ct} className="radio-label">
+                    <input type="radio" name="chaining" value={ct} checked={taChaining === ct} onChange={() => setTaChaining(ct)} />
+                    <span>
+                      {ct === 'total_task' ? 'Total Task' : ct === 'forward' ? 'Forward Chaining' : 'Backward Chaining'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {taChaining !== 'total_task' && taSteps.length > 0 && (
+              <div className="input-group">
+                <label>Teaching Step (currently active)</label>
+                <select value={taCurrentStep} onChange={e => setTaCurrentStep(Number(e.target.value))}>
+                  {taSteps.map(s => (
+                    <option key={s.stepNumber} value={s.stepNumber}>Step {s.stepNumber}: {s.description}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="input-group">
+              <label>Steps ({taSteps.length})</label>
+              {taSteps.map(step => (
+                <div key={step.stepNumber} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ minWidth: 22, color: 'var(--text-secondary)', fontSize: 13 }}>{step.stepNumber}.</span>
+                  <span style={{ flex: 1, fontSize: 14 }}>{step.description}</span>
+                  <button type="button" onClick={() => removeTaStep(step.stepNumber)} style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>✕</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <input
+                  type="text"
+                  value={taNewStep}
+                  onChange={e => setTaNewStep(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTaStep() } }}
+                  placeholder={`Step ${taSteps.length + 1} description…`}
+                  style={{ flex: 1 }}
+                />
+                <button type="button" className="btn btn-outline" onClick={addTaStep} style={{ padding: '8px 14px', minHeight: 'auto' }}>Add</button>
+              </div>
+            </div>
+          </>
+        )}
       </Modal>
 
       <ConfirmDialog

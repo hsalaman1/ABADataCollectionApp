@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType, type Trial, type PromptLevel, PROMPT_LABELS, PROMPT_ORDER } from '../db/database'
+import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType, type Trial, type PromptLevel, type TaskAnalysisStep, type TaskAnalysisTrial, type TaskAnalysisStepResult, type ChainingType, PROMPT_LABELS, PROMPT_ORDER } from '../db/database'
 import { formatDuration } from '../utils/time'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -28,6 +28,12 @@ interface BehaviorState {
   // Event recording (acquisition)
   trialsV2: Trial[]
   selectedPrompt: PromptLevel
+  // Task analysis
+  taSteps: TaskAnalysisStep[]
+  taChainingType: ChainingType
+  taTeachingStep: number
+  taCurrentTrial: TaskAnalysisStepResult[]   // in-progress trial, one entry per step
+  taskAnalysisTrials: TaskAnalysisTrial[]
   // Deceleration
   decelCount: number
   decelDurationMs: number
@@ -81,6 +87,15 @@ export default function SessionPage() {
             intervalRunning: false,
             trialsV2: [],
             selectedPrompt: 'independent' as PromptLevel,
+            taSteps: b.taskAnalysis?.steps ?? [],
+            taChainingType: b.taskAnalysis?.chainingType ?? 'total_task',
+            taTeachingStep: b.taskAnalysis?.currentStep ?? 1,
+            taCurrentTrial: (b.taskAnalysis?.steps ?? []).map(s => ({
+              stepNumber: s.stepNumber,
+              prompt: 'independent' as PromptLevel,
+              correct: true,
+            })),
+            taskAnalysisTrials: [],
             decelCount: 0,
             decelDurationMs: 0,
             decelIsRunning: false,
@@ -121,6 +136,7 @@ export default function SessionPage() {
       totalTrials: state.trialsV2.length,
       correctTrials: state.trialsV2.filter(t => t.correct).length,
       independentTrials: state.trialsV2.filter(t => t.correct && t.prompt === 'independent').length,
+      taskAnalysisTrials: state.taskAnalysisTrials,
       // Deceleration data
       decelCount: state.decelCount,
       decelDurationMs: state.decelDurationMs + (state.decelIsRunning && state.decelStartTime ? Date.now() - state.decelStartTime : 0),
@@ -287,6 +303,30 @@ export default function SessionPage() {
 
   const setPrompt = (behaviorId: string, prompt: PromptLevel) => {
     updateBehavior(behaviorId, { selectedPrompt: prompt })
+  }
+
+  const updateTAStep = (behaviorId: string, stepNumber: number, updates: Partial<TaskAnalysisStepResult>) => {
+    setBehaviorStates(states => states.map(s => {
+      if (s.behaviorId !== behaviorId) return s
+      const updated = s.taCurrentTrial.map(r =>
+        r.stepNumber === stepNumber ? { ...r, ...updates } : r
+      )
+      return { ...s, taCurrentTrial: updated }
+    }))
+  }
+
+  const completeTATrial = (behaviorId: string) => {
+    const state = behaviorStates.find(s => s.behaviorId === behaviorId)
+    if (!state || state.taCurrentTrial.length === 0) return
+    const newTrial: TaskAnalysisTrial = {
+      timestamp: new Date().toISOString(),
+      stepResults: state.taCurrentTrial,
+    }
+    pushUndo(behaviorId, 'complete TA trial', { taskAnalysisTrials: state.taskAnalysisTrials })
+    updateBehavior(behaviorId, {
+      taskAnalysisTrials: [...state.taskAnalysisTrials, newTrial],
+      taCurrentTrial: state.taSteps.map(s => ({ stepNumber: s.stepNumber, prompt: 'independent' as PromptLevel, correct: true })),
+    })
   }
 
   // Deceleration functions
@@ -648,6 +688,92 @@ export default function SessionPage() {
                         ))}
                       </div>
                     )}
+                  </>
+                )}
+                {state.dataType === 'task_analysis' && state.taSteps.length > 0 && (
+                  <>
+                    <p className="text-sm text-secondary mb-2" style={{ textTransform: 'capitalize' }}>
+                      {state.taChainingType.replace('_', ' ')} · Trial {state.taskAnalysisTrials.length + 1}
+                      {state.taChainingType !== 'total_task' && ` · Teaching step ${state.taTeachingStep}`}
+                    </p>
+
+                    {state.taSteps.map(step => {
+                      const result = state.taCurrentTrial.find(r => r.stepNumber === step.stepNumber)
+                      if (!result) return null
+                      const isTeaching = state.taChainingType !== 'total_task' && step.stepNumber === state.taTeachingStep
+                      return (
+                        <div
+                          key={step.stepNumber}
+                          style={{
+                            border: `2px solid ${isTeaching ? 'var(--primary)' : 'var(--border)'}`,
+                            borderRadius: 10,
+                            padding: '10px 12px',
+                            marginBottom: 8,
+                            background: isTeaching ? 'rgba(25,118,210,0.05)' : 'var(--background)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontWeight: 600, fontSize: 14 }}>
+                              {step.stepNumber}. {step.description}
+                            </span>
+                            {isTeaching && <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 700 }}>★ teaching</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+                            {PROMPT_ORDER.map(p => (
+                              <button
+                                key={p}
+                                onClick={() => updateTAStep(state.behaviorId, step.stepNumber, { prompt: p })}
+                                style={{
+                                  flex: 1, minWidth: 36, padding: '4px 3px', borderRadius: 5,
+                                  border: `2px solid ${result.prompt === p ? 'var(--primary)' : 'var(--border)'}`,
+                                  background: result.prompt === p ? 'var(--primary)' : 'var(--background)',
+                                  color: result.prompt === p ? 'white' : 'var(--text-secondary)',
+                                  fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                }}
+                              >{PROMPT_LABELS[p]}</button>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              onClick={() => updateTAStep(state.behaviorId, step.stepNumber, { correct: true })}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: 6, border: `2px solid ${result.correct ? 'var(--success)' : 'var(--border)'}`,
+                                background: result.correct ? 'var(--success)' : 'var(--background)',
+                                color: result.correct ? 'white' : 'var(--text-secondary)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                              }}
+                            >✓ Correct</button>
+                            <button
+                              onClick={() => updateTAStep(state.behaviorId, step.stepNumber, { correct: false })}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: 6, border: `2px solid ${!result.correct ? 'var(--danger)' : 'var(--border)'}`,
+                                background: !result.correct ? 'var(--danger)' : 'var(--background)',
+                                color: !result.correct ? 'white' : 'var(--text-secondary)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                              }}
+                            >✗ Error</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    <button
+                      className="btn btn-primary btn-block mt-2"
+                      onClick={() => completeTATrial(state.behaviorId)}
+                      style={{ marginBottom: 4 }}
+                    >
+                      Complete Trial ({state.taskAnalysisTrials.length + 1})
+                    </button>
+
+                    {state.taskAnalysisTrials.length > 0 && (() => {
+                      const lastTrial = state.taskAnalysisTrials[state.taskAnalysisTrials.length - 1]
+                      const correct = lastTrial.stepResults.filter(r => r.correct).length
+                      const total = lastTrial.stepResults.length
+                      const indep = lastTrial.stepResults.filter(r => r.correct && r.prompt === 'independent').length
+                      return (
+                        <p className="text-sm text-secondary text-center">
+                          {state.taskAnalysisTrials.length} trial{state.taskAnalysisTrials.length !== 1 ? 's' : ''} · Last: {correct}/{total} correct · {total > 0 ? Math.round((indep / total) * 100) : 0}% indep
+                        </p>
+                      )
+                    })()}
                   </>
                 )}
               </>

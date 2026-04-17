@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, type BehaviorData, PROMPT_LABELS } from '../db/database'
+import { db, type BehaviorData, PROMPT_LABELS, type TaskAnalysisTrial } from '../db/database'
 import { formatDuration, formatDateTime } from '../utils/time'
 import { exportSessionToCSV, exportSessionToPDF, exportNotesToText } from '../utils/export'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -42,6 +42,14 @@ export default function SessionDetailPage() {
         const occurrences = data.intervals.filter(Boolean).length
         const percentage = Math.round((occurrences / data.intervals.length) * 100)
         return `${percentage}% (${occurrences}/${data.intervals.length})`
+      case 'task_analysis': {
+        const tTrials = data.taskAnalysisTrials ?? []
+        if (tTrials.length === 0) return '0 trials'
+        const last = tTrials[tTrials.length - 1]
+        const steps = last.stepResults.length
+        const correct = last.stepResults.filter(r => r.correct).length
+        return `${tTrials.length} trial${tTrials.length !== 1 ? 's' : ''} · Last: ${correct}/${steps}`
+      }
       case 'event': {
         const trials = data.trialsV2 ?? data.trials?.map(c => ({ correct: c, prompt: 'independent' as const })) ?? []
         if (trials.length === 0) return '0/0 (0%)'
@@ -190,6 +198,67 @@ export default function SessionDetailPage() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )
+              })}
+          </>
+        )}
+
+        {session.behaviorData.some(bd => bd.dataType === 'task_analysis' && (bd.taskAnalysisTrials?.length ?? 0) > 0) && (
+          <>
+            <h2 className="text-lg font-bold mb-2">Task Analysis</h2>
+            {session.behaviorData
+              .filter(bd => bd.dataType === 'task_analysis' && (bd.taskAnalysisTrials?.length ?? 0) > 0)
+              .map(bd => {
+                const trials = bd.taskAnalysisTrials as TaskAnalysisTrial[]
+                const allStepNums = [...new Set(trials.flatMap(t => t.stepResults.map(r => r.stepNumber)))].sort((a, b) => a - b)
+                return (
+                  <div key={bd.behaviorId} className="card mb-4">
+                    <h3 className="font-bold mb-3">{bd.behaviorName}</h3>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--text-secondary)' }}>Trial</th>
+                            {allStepNums.map(n => (
+                              <th key={n} style={{ padding: '4px 6px', color: 'var(--text-secondary)', textAlign: 'center' }}>S{n}</th>
+                            ))}
+                            <th style={{ padding: '4px 6px', color: 'var(--text-secondary)', textAlign: 'center' }}>%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {trials.map((trial, tidx) => {
+                            const total = trial.stepResults.length
+                            const indep = trial.stepResults.filter(r => r.correct && r.prompt === 'independent').length
+                            return (
+                              <tr key={tidx} style={{ borderTop: '1px solid var(--border)' }}>
+                                <td style={{ padding: '4px 8px', color: 'var(--text-secondary)' }}>{tidx + 1}</td>
+                                {allStepNums.map(n => {
+                                  const r = trial.stepResults.find(s => s.stepNumber === n)
+                                  if (!r) return <td key={n} style={{ textAlign: 'center', padding: '4px 6px' }}>—</td>
+                                  return (
+                                    <td key={n} style={{ textAlign: 'center', padding: '4px 6px' }}>
+                                      <span
+                                        title={`${r.correct ? 'Correct' : 'Error'} · ${PROMPT_LABELS[r.prompt]}`}
+                                        style={{ display: 'inline-block', width: 24, height: 24, lineHeight: '24px', borderRadius: 4, background: r.correct ? 'var(--success)' : 'var(--danger)', color: 'white', fontSize: 10, fontWeight: 700 }}
+                                      >
+                                        {PROMPT_LABELS[r.prompt]}
+                                      </span>
+                                    </td>
+                                  )
+                                })}
+                                <td style={{ textAlign: 'center', padding: '4px 6px', fontWeight: 600 }}>
+                                  {total > 0 ? Math.round((indep / total) * 100) : 0}%
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-sm text-secondary mt-2">
+                      Columns show abbreviated prompt level · % = independent steps only
+                    </p>
                   </div>
                 )
               })}
