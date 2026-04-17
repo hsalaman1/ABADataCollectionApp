@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
 import ClientsPage from './pages/ClientsPage'
 import SessionPage from './pages/SessionPage'
@@ -6,11 +7,23 @@ import ClientFormPage from './pages/ClientFormPage'
 import SelectClientPage from './pages/SelectClientPage'
 import SessionDetailPage from './pages/SessionDetailPage'
 import { useTheme } from './hooks/useTheme'
+import { useToast } from './components/Toast'
+import { isBackupDue } from './utils/backup'
 
 function App() {
   const location = useLocation()
   const hideNav = location.pathname.includes('/session/') && !location.pathname.includes('/session/select')
   const { theme, toggle } = useTheme()
+  const toast = useToast()
+
+  useEffect(() => {
+    if (!isBackupDue()) return
+    const id = setTimeout(() => {
+      toast.info('Back up your data — tap to download')
+    }, 2000)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <>

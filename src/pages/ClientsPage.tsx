@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory } from '../db/database'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
+import BackupMenu from '../components/BackupMenu'
 
 interface BehaviorFormData {
   id: string
@@ -220,7 +221,7 @@ export default function ClientsPage() {
       <>
         <header className="page-header">
           <h1>Clients</h1>
-          <div style={{ width: 48 }} />
+          <BackupMenu />
         </header>
 
         <div className="container">
@@ -315,13 +316,16 @@ export default function ClientsPage() {
     <>
       <header className="page-header">
         <h1>Client Management</h1>
-        <button
-          className="btn btn-primary"
-          style={{ padding: '8px 16px', fontSize: 14 }}
-          onClick={handleNewClient}
-        >
-          + New Client
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <BackupMenu />
+          <button
+            className="btn btn-primary"
+            style={{ padding: '8px 16px', fontSize: 14 }}
+            onClick={handleNewClient}
+          >
+            + New Client
+          </button>
+        </div>
       </header>
 
       <div className="three-panel-layout">
