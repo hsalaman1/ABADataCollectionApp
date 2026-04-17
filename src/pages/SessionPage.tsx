@@ -1,11 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType } from '../db/database'
+import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType, type Trial, type PromptLevel, type TaskAnalysisStep, type TaskAnalysisTrial, type TaskAnalysisStepResult, type ChainingType, PROMPT_LABELS, PROMPT_ORDER } from '../db/database'
+import { advanceSTOIfMastered } from '../utils/masteryCalculations'
+import { useToast } from '../components/Toast'
 import { formatDuration } from '../utils/time'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import ABCModal from '../components/ABCModal'
+
+interface UndoEntry {
+  label: string
+  snapshot: Partial<BehaviorState>
+}
 
 interface BehaviorState {
   behaviorId: string
@@ -21,18 +28,27 @@ interface BehaviorState {
   intervalTimeRemaining: number
   intervalRunning: boolean
   // Event recording (acquisition)
-  trials: boolean[]
+  trialsV2: Trial[]
+  selectedPrompt: PromptLevel
+  // Task analysis
+  taSteps: TaskAnalysisStep[]
+  taChainingType: ChainingType
+  taTeachingStep: number
+  taCurrentTrial: TaskAnalysisStepResult[]   // in-progress trial, one entry per step
+  taskAnalysisTrials: TaskAnalysisTrial[]
   // Deceleration
   decelCount: number
   decelDurationMs: number
   decelIsRunning: boolean
   decelStartTime: number | null
   abcRecords: ABCRecord[]
+  undoStack: UndoEntry[]
 }
 
 export default function SessionPage() {
   const navigate = useNavigate()
   const { clientId } = useParams()
+  const toast = useToast()
 
   const [client, setClient] = useState<Client | null>(null)
   const [sessionId] = useState(uuidv4())
@@ -72,12 +88,23 @@ export default function SessionPage() {
             intervals: [],
             intervalTimeRemaining: 15,
             intervalRunning: false,
-            trials: [],
+            trialsV2: [],
+            selectedPrompt: 'independent' as PromptLevel,
+            taSteps: b.taskAnalysis?.steps ?? [],
+            taChainingType: b.taskAnalysis?.chainingType ?? 'total_task',
+            taTeachingStep: b.taskAnalysis?.currentStep ?? 1,
+            taCurrentTrial: (b.taskAnalysis?.steps ?? []).map(s => ({
+              stepNumber: s.stepNumber,
+              prompt: 'independent' as PromptLevel,
+              correct: true,
+            })),
+            taskAnalysisTrials: [],
             decelCount: 0,
             decelDurationMs: 0,
             decelIsRunning: false,
             decelStartTime: null,
-            abcRecords: []
+            abcRecords: [],
+            undoStack: []
           })))
         }
       })
@@ -107,9 +134,12 @@ export default function SessionPage() {
       totalDurationMs: state.totalDurationMs + (state.isRunning && state.startTime ? Date.now() - state.startTime : 0),
       intervalLengthSec: state.intervalLengthSec,
       intervals: state.intervals,
-      trials: state.trials,
-      totalTrials: state.trials.length,
-      correctTrials: state.trials.filter(Boolean).length,
+      trialsV2: state.trialsV2,
+      trials: state.trialsV2.map(t => t.correct), // keep for chart backward-compat
+      totalTrials: state.trialsV2.length,
+      correctTrials: state.trialsV2.filter(t => t.correct).length,
+      independentTrials: state.trialsV2.filter(t => t.correct && t.prompt === 'independent').length,
+      taskAnalysisTrials: state.taskAnalysisTrials,
       // Deceleration data
       decelCount: state.decelCount,
       decelDurationMs: state.decelDurationMs + (state.decelIsRunning && state.decelStartTime ? Date.now() - state.decelStartTime : 0),
@@ -156,10 +186,31 @@ export default function SessionPage() {
     )
   }
 
+  const pushUndo = (behaviorId: string, label: string, snapshot: Partial<BehaviorState>) => {
+    setBehaviorStates(states =>
+      states.map(s => {
+        if (s.behaviorId !== behaviorId) return s
+        const stack = [...s.undoStack, { label, snapshot }].slice(-20)
+        return { ...s, undoStack: stack }
+      })
+    )
+  }
+
+  const undoLast = (behaviorId: string) => {
+    setBehaviorStates(states =>
+      states.map(s => {
+        if (s.behaviorId !== behaviorId || s.undoStack.length === 0) return s
+        const entry = s.undoStack[s.undoStack.length - 1]
+        return { ...s, ...entry.snapshot, undoStack: s.undoStack.slice(0, -1) }
+      })
+    )
+  }
+
   const handleFrequencyTap = (behaviorId: string) => {
-    updateBehavior(behaviorId, {
-      count: (behaviorStates.find(s => s.behaviorId === behaviorId)?.count ?? 0) + 1
-    })
+    const state = behaviorStates.find(s => s.behaviorId === behaviorId)
+    if (!state) return
+    pushUndo(behaviorId, 'frequency tap', { count: state.count })
+    updateBehavior(behaviorId, { count: state.count + 1 })
   }
 
   const handleDurationToggle = (behaviorId: string) => {
@@ -172,6 +223,7 @@ export default function SessionPage() {
         clearInterval(behaviorTimersRef.current.get(behaviorId))
         behaviorTimersRef.current.delete(behaviorId)
       }
+      pushUndo(behaviorId, 'duration stop', { totalDurationMs: state.totalDurationMs, isRunning: true, startTime: state.startTime })
       updateBehavior(behaviorId, {
         isRunning: false,
         startTime: null,
@@ -231,6 +283,7 @@ export default function SessionPage() {
       intervalTimersRef.current.delete(behaviorId)
     }
 
+    pushUndo(behaviorId, 'interval mark', { intervals: state.intervals })
     updateBehavior(behaviorId, {
       intervals: [...state.intervals, occurred],
       intervalTimeRemaining: state.intervalLengthSec,
@@ -242,17 +295,40 @@ export default function SessionPage() {
     const state = behaviorStates.find(s => s.behaviorId === behaviorId)
     if (!state) return
 
-    updateBehavior(behaviorId, {
-      trials: [...state.trials, correct]
-    })
+    const trial: Trial = {
+      correct,
+      prompt: state.selectedPrompt,
+      timestamp: new Date().toISOString(),
+    }
+    pushUndo(behaviorId, correct ? `correct (${PROMPT_LABELS[state.selectedPrompt]})` : 'incorrect', { trialsV2: state.trialsV2 })
+    updateBehavior(behaviorId, { trialsV2: [...state.trialsV2, trial] })
   }
 
-  const undoLastTrial = (behaviorId: string) => {
-    const state = behaviorStates.find(s => s.behaviorId === behaviorId)
-    if (!state || state.trials.length === 0) return
+  const setPrompt = (behaviorId: string, prompt: PromptLevel) => {
+    updateBehavior(behaviorId, { selectedPrompt: prompt })
+  }
 
+  const updateTAStep = (behaviorId: string, stepNumber: number, updates: Partial<TaskAnalysisStepResult>) => {
+    setBehaviorStates(states => states.map(s => {
+      if (s.behaviorId !== behaviorId) return s
+      const updated = s.taCurrentTrial.map(r =>
+        r.stepNumber === stepNumber ? { ...r, ...updates } : r
+      )
+      return { ...s, taCurrentTrial: updated }
+    }))
+  }
+
+  const completeTATrial = (behaviorId: string) => {
+    const state = behaviorStates.find(s => s.behaviorId === behaviorId)
+    if (!state || state.taCurrentTrial.length === 0) return
+    const newTrial: TaskAnalysisTrial = {
+      timestamp: new Date().toISOString(),
+      stepResults: state.taCurrentTrial,
+    }
+    pushUndo(behaviorId, 'complete TA trial', { taskAnalysisTrials: state.taskAnalysisTrials })
     updateBehavior(behaviorId, {
-      trials: state.trials.slice(0, -1)
+      taskAnalysisTrials: [...state.taskAnalysisTrials, newTrial],
+      taCurrentTrial: state.taSteps.map(s => ({ stepNumber: s.stepNumber, prompt: 'independent' as PromptLevel, correct: true })),
     })
   }
 
@@ -261,9 +337,8 @@ export default function SessionPage() {
     const state = behaviorStates.find(s => s.behaviorId === behaviorId)
     if (!state) return
 
-    updateBehavior(behaviorId, {
-      decelCount: state.decelCount + 1
-    })
+    pushUndo(behaviorId, 'decel count', { decelCount: state.decelCount })
+    updateBehavior(behaviorId, { decelCount: state.decelCount + 1 })
   }
 
   const handleDecelDurationToggle = (behaviorId: string) => {
@@ -276,6 +351,7 @@ export default function SessionPage() {
         clearInterval(decelTimersRef.current.get(behaviorId))
         decelTimersRef.current.delete(behaviorId)
       }
+      pushUndo(behaviorId, 'decel duration stop', { decelDurationMs: state.decelDurationMs, decelIsRunning: true, decelStartTime: state.decelStartTime })
       updateBehavior(behaviorId, {
         decelIsRunning: false,
         decelStartTime: null,
@@ -304,9 +380,8 @@ export default function SessionPage() {
     const state = behaviorStates.find(s => s.behaviorId === behaviorId)
     if (!state) return
 
-    updateBehavior(behaviorId, {
-      abcRecords: [...state.abcRecords, record]
-    })
+    pushUndo(behaviorId, 'ABC record', { abcRecords: state.abcRecords })
+    updateBehavior(behaviorId, { abcRecords: [...state.abcRecords, record] })
   }
 
   const handleEndSession = async () => {
@@ -317,6 +392,32 @@ export default function SessionPage() {
     if (sessionTimerRef.current) clearInterval(sessionTimerRef.current)
 
     await saveSession(true)
+
+    // Check mastery auto-advance for all behaviors with STOs
+    if (client) {
+      const allSessions = await db.sessions.where('clientId').equals(client.id).toArray()
+      const updatedBehaviors = [...client.targetBehaviors]
+      let anyAdvanced = false
+
+      for (let i = 0; i < updatedBehaviors.length; i++) {
+        const b = updatedBehaviors[i]
+        if (!b.masteryCriteria || !b.stos?.length) continue
+        const result = advanceSTOIfMastered(b, allSessions)
+        if (result.advanced) {
+          updatedBehaviors[i] = result.updatedBehavior
+          anyAdvanced = true
+          const msg = result.nextSto
+            ? `🎉 "${b.name}" mastered! Now on: ${result.nextSto.description}`
+            : `🎉 "${b.name}" — all STOs mastered!`
+          toast.success(msg)
+        }
+      }
+
+      if (anyAdvanced) {
+        await db.clients.update(client.id, { targetBehaviors: updatedBehaviors, updatedAt: new Date().toISOString() })
+      }
+    }
+
     navigate('/data')
   }
 
@@ -408,7 +509,7 @@ export default function SessionPage() {
             </div>
 
             {/* Acquisition behavior controls */}
-            {state.category === 'acquisition' && (
+            {(state.category === 'acquisition' || (state.category === 'deceleration' && state.dataType !== 'deceleration')) && (
               <>
                 {state.dataType === 'frequency' && (
                   <button
@@ -529,6 +630,30 @@ export default function SessionPage() {
 
                 {state.dataType === 'event' && (
                   <>
+                    {/* Prompt selector */}
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
+                      {PROMPT_ORDER.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setPrompt(state.behaviorId, p)}
+                          style={{
+                            flex: 1,
+                            minWidth: 44,
+                            padding: '6px 4px',
+                            borderRadius: 6,
+                            border: `2px solid ${state.selectedPrompt === p ? 'var(--primary)' : 'var(--border)'}`,
+                            background: state.selectedPrompt === p ? 'var(--primary)' : 'var(--background)',
+                            color: state.selectedPrompt === p ? 'white' : 'var(--text-secondary)',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {PROMPT_LABELS[p]}
+                        </button>
+                      ))}
+                    </div>
+
                     <div className="event-controls">
                       <button
                         className="event-btn correct"
@@ -551,54 +676,140 @@ export default function SessionPage() {
                       </button>
                     </div>
 
-                    <div className="event-summary">
-                      <div className="event-stat">
-                        <div className="value">{state.trials.length}</div>
-                        <div className="label">Total Trials</div>
-                      </div>
-                      <div className="event-stat">
-                        <div className="value">{state.trials.filter(Boolean).length}</div>
-                        <div className="label">Correct</div>
-                      </div>
-                      <div className="event-stat">
-                        <div className="value">
-                          {state.trials.length > 0
-                            ? Math.round((state.trials.filter(Boolean).length / state.trials.length) * 100)
-                            : 0}%
+                    {(() => {
+                      const total = state.trialsV2.length
+                      const correct = state.trialsV2.filter(t => t.correct).length
+                      const indep = state.trialsV2.filter(t => t.correct && t.prompt === 'independent').length
+                      return (
+                        <div className="event-summary" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                          <div className="event-stat">
+                            <div className="value">{total}</div>
+                            <div className="label">Total</div>
+                          </div>
+                          <div className="event-stat">
+                            <div className="value">{correct}</div>
+                            <div className="label">Correct</div>
+                          </div>
+                          <div className="event-stat">
+                            <div className="value">{total > 0 ? Math.round((correct / total) * 100) : 0}%</div>
+                            <div className="label">Accuracy</div>
+                          </div>
+                          <div className="event-stat">
+                            <div className="value" style={{ color: 'var(--success)' }}>{total > 0 ? Math.round((indep / total) * 100) : 0}%</div>
+                            <div className="label">Indep.</div>
+                          </div>
                         </div>
-                        <div className="label">Accuracy</div>
-                      </div>
-                    </div>
+                      )
+                    })()}
 
-                    {state.trials.length > 0 && (
-                      <>
-                        <div className="trial-history">
-                          {state.trials.map((correct, idx) => (
-                            <div
-                              key={idx}
-                              className={`trial-dot ${correct ? 'correct' : 'incorrect'}`}
-                              title={`Trial ${idx + 1}: ${correct ? 'Correct' : 'Incorrect'}`}
-                            >
-                              {correct ? '+' : '-'}
-                            </div>
-                          ))}
-                        </div>
-                        <button
-                          className="btn btn-outline btn-block mt-2"
-                          onClick={() => undoLastTrial(state.behaviorId)}
-                          style={{ fontSize: 14 }}
-                        >
-                          Undo Last Trial
-                        </button>
-                      </>
+                    {state.trialsV2.length > 0 && (
+                      <div className="trial-history">
+                        {state.trialsV2.map((trial, idx) => (
+                          <div
+                            key={idx}
+                            className={`trial-dot ${trial.correct ? 'correct' : 'incorrect'}`}
+                            title={`Trial ${idx + 1}: ${trial.correct ? 'Correct' : 'Incorrect'} (${PROMPT_LABELS[trial.prompt]})`}
+                            style={{ fontSize: 10, width: 32, height: 32, flexDirection: 'column', gap: 1 }}
+                          >
+                            <span>{trial.correct ? '+' : '−'}</span>
+                            <span style={{ fontSize: 8, opacity: 0.85 }}>{PROMPT_LABELS[trial.prompt]}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
+                  </>
+                )}
+                {state.dataType === 'task_analysis' && state.taSteps.length > 0 && (
+                  <>
+                    <p className="text-sm text-secondary mb-2" style={{ textTransform: 'capitalize' }}>
+                      {state.taChainingType.replace('_', ' ')} · Trial {state.taskAnalysisTrials.length + 1}
+                      {state.taChainingType !== 'total_task' && ` · Teaching step ${state.taTeachingStep}`}
+                    </p>
+
+                    {state.taSteps.map(step => {
+                      const result = state.taCurrentTrial.find(r => r.stepNumber === step.stepNumber)
+                      if (!result) return null
+                      const isTeaching = state.taChainingType !== 'total_task' && step.stepNumber === state.taTeachingStep
+                      return (
+                        <div
+                          key={step.stepNumber}
+                          style={{
+                            border: `2px solid ${isTeaching ? 'var(--primary)' : 'var(--border)'}`,
+                            borderRadius: 10,
+                            padding: '10px 12px',
+                            marginBottom: 8,
+                            background: isTeaching ? 'rgba(25,118,210,0.05)' : 'var(--background)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontWeight: 600, fontSize: 14 }}>
+                              {step.stepNumber}. {step.description}
+                            </span>
+                            {isTeaching && <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 700 }}>★ teaching</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap' }}>
+                            {PROMPT_ORDER.map(p => (
+                              <button
+                                key={p}
+                                onClick={() => updateTAStep(state.behaviorId, step.stepNumber, { prompt: p })}
+                                style={{
+                                  flex: 1, minWidth: 36, padding: '4px 3px', borderRadius: 5,
+                                  border: `2px solid ${result.prompt === p ? 'var(--primary)' : 'var(--border)'}`,
+                                  background: result.prompt === p ? 'var(--primary)' : 'var(--background)',
+                                  color: result.prompt === p ? 'white' : 'var(--text-secondary)',
+                                  fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                }}
+                              >{PROMPT_LABELS[p]}</button>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              onClick={() => updateTAStep(state.behaviorId, step.stepNumber, { correct: true })}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: 6, border: `2px solid ${result.correct ? 'var(--success)' : 'var(--border)'}`,
+                                background: result.correct ? 'var(--success)' : 'var(--background)',
+                                color: result.correct ? 'white' : 'var(--text-secondary)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                              }}
+                            >✓ Correct</button>
+                            <button
+                              onClick={() => updateTAStep(state.behaviorId, step.stepNumber, { correct: false })}
+                              style={{
+                                flex: 1, padding: '6px', borderRadius: 6, border: `2px solid ${!result.correct ? 'var(--danger)' : 'var(--border)'}`,
+                                background: !result.correct ? 'var(--danger)' : 'var(--background)',
+                                color: !result.correct ? 'white' : 'var(--text-secondary)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                              }}
+                            >✗ Error</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    <button
+                      className="btn btn-primary btn-block mt-2"
+                      onClick={() => completeTATrial(state.behaviorId)}
+                      style={{ marginBottom: 4 }}
+                    >
+                      Complete Trial ({state.taskAnalysisTrials.length + 1})
+                    </button>
+
+                    {state.taskAnalysisTrials.length > 0 && (() => {
+                      const lastTrial = state.taskAnalysisTrials[state.taskAnalysisTrials.length - 1]
+                      const correct = lastTrial.stepResults.filter(r => r.correct).length
+                      const total = lastTrial.stepResults.length
+                      const indep = lastTrial.stepResults.filter(r => r.correct && r.prompt === 'independent').length
+                      return (
+                        <p className="text-sm text-secondary text-center">
+                          {state.taskAnalysisTrials.length} trial{state.taskAnalysisTrials.length !== 1 ? 's' : ''} · Last: {correct}/{total} correct · {total > 0 ? Math.round((indep / total) * 100) : 0}% indep
+                        </p>
+                      )
+                    })()}
                   </>
                 )}
               </>
             )}
 
-            {/* Deceleration behavior controls */}
-            {state.category === 'deceleration' && (
+            {/* Deceleration behavior controls — only for the combined type */}
+            {state.category === 'deceleration' && state.dataType === 'deceleration' && (
               <div className="decel-controls">
                 {/* Frequency counter + Duration timer row */}
                 <div className="decel-row">
@@ -654,6 +865,19 @@ export default function SessionPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Unified undo button — shown for any data type when there's history */}
+            {state.undoStack.length > 0 && (
+              <button
+                className="btn btn-outline btn-block mt-2"
+                onClick={() => undoLast(state.behaviorId)}
+                disabled={state.isRunning || state.decelIsRunning}
+                style={{ fontSize: 13, minHeight: 40 }}
+                title={state.isRunning || state.decelIsRunning ? 'Stop timer before undoing' : undefined}
+              >
+                ↩ Undo: {state.undoStack[state.undoStack.length - 1].label}
+              </button>
             )}
           </div>
         ))}

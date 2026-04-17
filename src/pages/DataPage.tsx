@@ -7,6 +7,7 @@ import { formatDate, formatDuration } from '../utils/time'
 import { exportClientDataToCSV } from '../utils/export'
 import Modal from '../components/Modal'
 import { v4 as uuidv4 } from 'uuid'
+import { checkBehaviorMastery } from '../utils/masteryCalculations'
 
 interface ManualSessionData {
   date: string
@@ -36,6 +37,9 @@ export default function DataPage() {
 
   const [selectedBehaviorId, setSelectedBehaviorId] = useState<string | null>(null)
   const [showAddSession, setShowAddSession] = useState(false)
+  const [sessionDateFrom, setSessionDateFrom] = useState('')
+  const [sessionDateTo, setSessionDateTo] = useState('')
+  const [sessionNotesQuery, setSessionNotesQuery] = useState('')
   const [manualSession, setManualSession] = useState<ManualSessionData>({
     date: new Date().toISOString().split('T')[0],
     durationMinutes: 30,
@@ -81,6 +85,35 @@ export default function DataPage() {
       return dataPoint
     })
   }, [sessions, selectedClient])
+
+  const filtersActive = !!(sessionDateFrom || sessionDateTo || sessionNotesQuery.trim())
+
+  const filteredSessions = useMemo(() => {
+    if (!sessions) return []
+    return sessions.filter(s => {
+      if (sessionDateFrom && s.startTime < new Date(sessionDateFrom).toISOString()) return false
+      if (sessionDateTo) {
+        const endOfDay = new Date(sessionDateTo)
+        endOfDay.setDate(endOfDay.getDate() + 1)
+        if (s.startTime >= endOfDay.toISOString()) return false
+      }
+      if (sessionNotesQuery.trim() && !s.notes.toLowerCase().includes(sessionNotesQuery.trim().toLowerCase())) return false
+      return true
+    })
+  }, [sessions, sessionDateFrom, sessionDateTo, sessionNotesQuery])
+
+  const masteryStatuses = useMemo(() => {
+    if (!selectedClient || !sessions) return new Map<string, { met: boolean; streak: number; nextSto?: string }>()
+    const map = new Map<string, { met: boolean; streak: number; nextSto?: string }>()
+    for (const b of selectedClient.targetBehaviors) {
+      if (!b.masteryCriteria) continue
+      const status = checkBehaviorMastery(sessions, b.id, b.masteryCriteria)
+      const activeSto = b.stos?.find(s => s.id === b.currentStoId && s.status === 'active')
+        ?? b.stos?.find(s => s.status === 'active')
+      map.set(b.id, { met: status.met, streak: status.streak, nextSto: activeSto?.description })
+    }
+    return map
+  }, [selectedClient, sessions])
 
   const selectedBehavior = selectedClient?.targetBehaviors.find(b => b.id === selectedBehaviorId)
   const behaviorsToChart = selectedBehavior
@@ -225,6 +258,10 @@ export default function DataPage() {
             id="clientSelect"
             value={selectedClientId || ''}
             onChange={e => {
+              if (e.target.value === '__new__') {
+                navigate('/clients/new')
+                return
+              }
               setSelectedClientId(e.target.value || null)
               setSelectedBehaviorId(null)
             }}
@@ -235,6 +272,7 @@ export default function DataPage() {
                 {client.name}
               </option>
             ))}
+            <option value="__new__">+ Add new client…</option>
           </select>
         </div>
 
@@ -261,16 +299,24 @@ export default function DataPage() {
                   >
                     All Behaviors
                   </button>
-                  {selectedClient.targetBehaviors.map(b => (
-                    <button
-                      key={b.id}
-                      className={`chip ${selectedBehaviorId === b.id ? 'chip-primary' : ''}`}
-                      onClick={() => setSelectedBehaviorId(b.id)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      {b.name}
-                    </button>
-                  ))}
+                  {selectedClient.targetBehaviors.map(b => {
+                    const ms = masteryStatuses.get(b.id)
+                    return (
+                      <button
+                        key={b.id}
+                        className={`chip ${selectedBehaviorId === b.id ? 'chip-primary' : ''}`}
+                        onClick={() => setSelectedBehaviorId(b.id)}
+                        style={{ cursor: 'pointer', gap: 4 }}
+                      >
+                        {b.name}
+                        {ms && (
+                          <span title={ms.nextSto ? `STO: ${ms.nextSto}` : undefined} style={{ fontSize: 10, marginLeft: 4, color: ms.met ? 'var(--success)' : 'var(--text-secondary)' }}>
+                            {ms.met ? '★ mastered' : `${ms.streak}/${b.masteryCriteria?.consecutiveSessions ?? 3}`}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -327,11 +373,52 @@ export default function DataPage() {
               </div>
             )}
 
-            <h2 className="text-lg font-bold mb-2">Session History</h2>
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-lg font-bold">Session History</h2>
+              {filtersActive && (
+                <button
+                  className="text-sm"
+                  style={{ color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { setSessionDateFrom(''); setSessionDateTo(''); setSessionNotesQuery('') }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            <div className="card mb-4" style={{ padding: 12 }}>
+              <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>From</label>
+                  <input type="date" value={sessionDateFrom} onChange={e => setSessionDateFrom(e.target.value)}
+                    style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--surface)', color: 'var(--text-primary)' }} />
+                </div>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>To</label>
+                  <input type="date" value={sessionDateTo} onChange={e => setSessionDateTo(e.target.value)}
+                    style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--surface)', color: 'var(--text-primary)' }} />
+                </div>
+                <div style={{ flex: '2 1 160px', position: 'relative' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Notes contain</label>
+                  <input type="search" value={sessionNotesQuery} onChange={e => setSessionNotesQuery(e.target.value)}
+                    placeholder="Search notes…"
+                    style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--surface)', color: 'var(--text-primary)' }} />
+                </div>
+              </div>
+              {filtersActive && (
+                <p className="text-sm text-secondary mt-2">
+                  Showing {filteredSessions.length} of {sessions?.length ?? 0} session{sessions?.length !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
 
             {sessions && sessions.length > 0 ? (
               <div>
-                {sessions.map(session => (
+                {filteredSessions.length === 0 ? (
+                  <div className="card text-center text-secondary mb-4" style={{ padding: 24 }}>
+                    No sessions match the current filters
+                  </div>
+                ) : filteredSessions.map(session => (
                   <div
                     key={session.id}
                     className="session-summary"

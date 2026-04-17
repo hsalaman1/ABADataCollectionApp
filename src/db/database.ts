@@ -6,8 +6,45 @@ import type {
   ParentTrainingProgram,
 } from '../types/treatmentPlan';
 
-export type DataType = 'frequency' | 'duration' | 'interval' | 'event' | 'deceleration';
+export type DataType = 'frequency' | 'duration' | 'interval' | 'event' | 'deceleration' | 'task_analysis';
 export type BehaviorCategory = 'acquisition' | 'deceleration';
+export type PromptLevel = 'independent' | 'gestural' | 'verbal' | 'partial_physical' | 'full_physical';
+
+export const PROMPT_LABELS: Record<PromptLevel, string> = {
+  independent: 'Ind',
+  gestural: 'Gest',
+  verbal: 'Verbal',
+  partial_physical: 'PP',
+  full_physical: 'FP',
+};
+
+export const PROMPT_ORDER: PromptLevel[] = [
+  'independent', 'gestural', 'verbal', 'partial_physical', 'full_physical'
+];
+
+export interface Trial {
+  correct: boolean;
+  prompt: PromptLevel;
+  timestamp: string;
+}
+
+export interface TaskAnalysisStep {
+  stepNumber: number;
+  description: string;
+}
+
+export type ChainingType = 'forward' | 'backward' | 'total_task';
+
+export interface TaskAnalysisStepResult {
+  stepNumber: number;
+  prompt: PromptLevel;
+  correct: boolean;
+}
+
+export interface TaskAnalysisTrial {
+  timestamp: string;
+  stepResults: TaskAnalysisStepResult[];
+}
 
 // Predefined ABC options
 export const ANTECEDENT_OPTIONS = [
@@ -41,6 +78,20 @@ export interface ABCRecord {
   consequenceNote?: string;
 }
 
+export interface MasteryCriteria {
+  percentage: number;           // 0–100
+  consecutiveSessions: number;
+  metric: 'independent' | 'correct';
+}
+
+export interface BehaviorSTO {
+  id: string;
+  description: string;
+  criteria: MasteryCriteria;
+  status: 'active' | 'mastered';
+  masteredAt?: string;
+}
+
 export interface TargetBehavior {
   id: string;
   name: string;
@@ -48,6 +99,16 @@ export interface TargetBehavior {
   dataType: DataType;
   category: BehaviorCategory;
   isActive?: boolean;
+  // Task analysis config (dataType === 'task_analysis')
+  taskAnalysis?: {
+    steps: TaskAnalysisStep[];
+    chainingType: ChainingType;
+    currentStep?: number; // 1-indexed step currently being taught
+  };
+  // Mastery
+  masteryCriteria?: MasteryCriteria;
+  stos?: BehaviorSTO[];
+  currentStoId?: string;
 }
 
 export interface Client {
@@ -74,10 +135,15 @@ export interface BehaviorData {
   // For interval
   intervalLengthSec?: number;
   intervals?: boolean[]; // true = occurrence, false = non-occurrence
-  // For event recording (acquisition skills)
+  // For event recording (legacy — kept for old sessions)
   trials?: boolean[]; // true = correct (+), false = incorrect (-)
   totalTrials?: number;
   correctTrials?: number;
+  // For event recording (v2 — prompt-level trials)
+  trialsV2?: Trial[];
+  independentTrials?: number;
+  // For task analysis
+  taskAnalysisTrials?: TaskAnalysisTrial[];
   // For deceleration (combines frequency + duration + ABC)
   decelCount?: number;
   decelDurationMs?: number;

@@ -20,12 +20,16 @@ function getBehaviorValue(data: BehaviorData): string {
       const occurrences = data.intervals.filter(Boolean).length
       const percentage = Math.round((occurrences / data.intervals.length) * 100)
       return `${percentage}% (${occurrences}/${data.intervals.length})`
-    case 'event':
-      if (!data.trials || data.trials.length === 0) return '0/0 (0%)'
-      const correct = data.trials.filter(Boolean).length
-      const total = data.trials.length
+    case 'event': {
+      const trials = data.trialsV2 ?? data.trials?.map(c => ({ correct: c, prompt: 'independent' as const })) ?? []
+      if (trials.length === 0) return '0/0 (0%)'
+      const correct = trials.filter(t => t.correct).length
+      const total = trials.length
+      const indep = trials.filter(t => t.correct && t.prompt === 'independent').length
       const pct = Math.round((correct / total) * 100)
-      return `${correct}/${total} (${pct}%)`
+      const indepPct = Math.round((indep / total) * 100)
+      return data.trialsV2 ? `${correct}/${total} (${pct}% · ${indepPct}% indep)` : `${correct}/${total} (${pct}%)`
+    }
     case 'deceleration':
       const count = data.decelCount ?? 0
       const duration = formatDuration(data.decelDurationMs ?? 0)

@@ -20,6 +20,21 @@
   --touch-target: 48px;
 }
 
+.dark {
+  --primary: #58a6ff;
+  --primary-dark: #388bfd;
+  --primary-light: #79c0ff;
+  --secondary: #8b949e;
+  --success: #3fb950;
+  --warning: #d29922;
+  --danger: #f85149;
+  --background: #0d1117;
+  --surface: #161b22;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --border: #30363d;
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;
@@ -1319,6 +1334,17 @@ a {
 
 .pulse {
   animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @supports (padding: max(0px)) {
