@@ -246,8 +246,14 @@ export default function ClientsPage() {
           {clients && clients.length > 0 ? (
             <div>
               {filteredClients.length === 0 && (
-                <div className="card text-center text-secondary mb-2" style={{ padding: 16 }}>
-                  No clients match "{clientSearch}"
+                <div className="card text-center mb-2" style={{ padding: 16 }}>
+                  <p className="text-secondary mb-3">No client named "{clientSearch}"</p>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => navigate('/clients/new')}
+                  >
+                    + Add new client
+                  </button>
                 </div>
               )}
               {filteredClients.map(client => (

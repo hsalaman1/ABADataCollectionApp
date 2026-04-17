@@ -258,6 +258,10 @@ export default function DataPage() {
             id="clientSelect"
             value={selectedClientId || ''}
             onChange={e => {
+              if (e.target.value === '__new__') {
+                navigate('/clients/new')
+                return
+              }
               setSelectedClientId(e.target.value || null)
               setSelectedBehaviorId(null)
             }}
@@ -268,6 +272,7 @@ export default function DataPage() {
                 {client.name}
               </option>
             ))}
+            <option value="__new__">+ Add new client…</option>
           </select>
         </div>
 
