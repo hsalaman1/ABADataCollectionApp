@@ -7,6 +7,11 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import ABCModal from '../components/ABCModal'
 
+interface UndoEntry {
+  label: string
+  snapshot: Partial<BehaviorState>
+}
+
 interface BehaviorState {
   behaviorId: string
   behaviorName: string
@@ -28,6 +33,7 @@ interface BehaviorState {
   decelIsRunning: boolean
   decelStartTime: number | null
   abcRecords: ABCRecord[]
+  undoStack: UndoEntry[]
 }
 
 export default function SessionPage() {
@@ -77,7 +83,8 @@ export default function SessionPage() {
             decelDurationMs: 0,
             decelIsRunning: false,
             decelStartTime: null,
-            abcRecords: []
+            abcRecords: [],
+            undoStack: []
           })))
         }
       })
@@ -156,10 +163,31 @@ export default function SessionPage() {
     )
   }
 
+  const pushUndo = (behaviorId: string, label: string, snapshot: Partial<BehaviorState>) => {
+    setBehaviorStates(states =>
+      states.map(s => {
+        if (s.behaviorId !== behaviorId) return s
+        const stack = [...s.undoStack, { label, snapshot }].slice(-20)
+        return { ...s, undoStack: stack }
+      })
+    )
+  }
+
+  const undoLast = (behaviorId: string) => {
+    setBehaviorStates(states =>
+      states.map(s => {
+        if (s.behaviorId !== behaviorId || s.undoStack.length === 0) return s
+        const entry = s.undoStack[s.undoStack.length - 1]
+        return { ...s, ...entry.snapshot, undoStack: s.undoStack.slice(0, -1) }
+      })
+    )
+  }
+
   const handleFrequencyTap = (behaviorId: string) => {
-    updateBehavior(behaviorId, {
-      count: (behaviorStates.find(s => s.behaviorId === behaviorId)?.count ?? 0) + 1
-    })
+    const state = behaviorStates.find(s => s.behaviorId === behaviorId)
+    if (!state) return
+    pushUndo(behaviorId, 'frequency tap', { count: state.count })
+    updateBehavior(behaviorId, { count: state.count + 1 })
   }
 
   const handleDurationToggle = (behaviorId: string) => {
@@ -172,6 +200,7 @@ export default function SessionPage() {
         clearInterval(behaviorTimersRef.current.get(behaviorId))
         behaviorTimersRef.current.delete(behaviorId)
       }
+      pushUndo(behaviorId, 'duration stop', { totalDurationMs: state.totalDurationMs, isRunning: true, startTime: state.startTime })
       updateBehavior(behaviorId, {
         isRunning: false,
         startTime: null,
@@ -231,6 +260,7 @@ export default function SessionPage() {
       intervalTimersRef.current.delete(behaviorId)
     }
 
+    pushUndo(behaviorId, 'interval mark', { intervals: state.intervals })
     updateBehavior(behaviorId, {
       intervals: [...state.intervals, occurred],
       intervalTimeRemaining: state.intervalLengthSec,
@@ -242,18 +272,8 @@ export default function SessionPage() {
     const state = behaviorStates.find(s => s.behaviorId === behaviorId)
     if (!state) return
 
-    updateBehavior(behaviorId, {
-      trials: [...state.trials, correct]
-    })
-  }
-
-  const undoLastTrial = (behaviorId: string) => {
-    const state = behaviorStates.find(s => s.behaviorId === behaviorId)
-    if (!state || state.trials.length === 0) return
-
-    updateBehavior(behaviorId, {
-      trials: state.trials.slice(0, -1)
-    })
+    pushUndo(behaviorId, correct ? 'correct trial' : 'incorrect trial', { trials: state.trials })
+    updateBehavior(behaviorId, { trials: [...state.trials, correct] })
   }
 
   // Deceleration functions
@@ -261,9 +281,8 @@ export default function SessionPage() {
     const state = behaviorStates.find(s => s.behaviorId === behaviorId)
     if (!state) return
 
-    updateBehavior(behaviorId, {
-      decelCount: state.decelCount + 1
-    })
+    pushUndo(behaviorId, 'decel count', { decelCount: state.decelCount })
+    updateBehavior(behaviorId, { decelCount: state.decelCount + 1 })
   }
 
   const handleDecelDurationToggle = (behaviorId: string) => {
@@ -276,6 +295,7 @@ export default function SessionPage() {
         clearInterval(decelTimersRef.current.get(behaviorId))
         decelTimersRef.current.delete(behaviorId)
       }
+      pushUndo(behaviorId, 'decel duration stop', { decelDurationMs: state.decelDurationMs, decelIsRunning: true, decelStartTime: state.decelStartTime })
       updateBehavior(behaviorId, {
         decelIsRunning: false,
         decelStartTime: null,
@@ -304,9 +324,8 @@ export default function SessionPage() {
     const state = behaviorStates.find(s => s.behaviorId === behaviorId)
     if (!state) return
 
-    updateBehavior(behaviorId, {
-      abcRecords: [...state.abcRecords, record]
-    })
+    pushUndo(behaviorId, 'ABC record', { abcRecords: state.abcRecords })
+    updateBehavior(behaviorId, { abcRecords: [...state.abcRecords, record] })
   }
 
   const handleEndSession = async () => {
@@ -571,26 +590,17 @@ export default function SessionPage() {
                     </div>
 
                     {state.trials.length > 0 && (
-                      <>
-                        <div className="trial-history">
-                          {state.trials.map((correct, idx) => (
-                            <div
-                              key={idx}
-                              className={`trial-dot ${correct ? 'correct' : 'incorrect'}`}
-                              title={`Trial ${idx + 1}: ${correct ? 'Correct' : 'Incorrect'}`}
-                            >
-                              {correct ? '+' : '-'}
-                            </div>
-                          ))}
-                        </div>
-                        <button
-                          className="btn btn-outline btn-block mt-2"
-                          onClick={() => undoLastTrial(state.behaviorId)}
-                          style={{ fontSize: 14 }}
-                        >
-                          Undo Last Trial
-                        </button>
-                      </>
+                      <div className="trial-history">
+                        {state.trials.map((correct, idx) => (
+                          <div
+                            key={idx}
+                            className={`trial-dot ${correct ? 'correct' : 'incorrect'}`}
+                            title={`Trial ${idx + 1}: ${correct ? 'Correct' : 'Incorrect'}`}
+                          >
+                            {correct ? '+' : '-'}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </>
                 )}
@@ -654,6 +664,19 @@ export default function SessionPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Unified undo button — shown for any data type when there's history */}
+            {state.undoStack.length > 0 && (
+              <button
+                className="btn btn-outline btn-block mt-2"
+                onClick={() => undoLast(state.behaviorId)}
+                disabled={state.isRunning || state.decelIsRunning}
+                style={{ fontSize: 13, minHeight: 40 }}
+                title={state.isRunning || state.decelIsRunning ? 'Stop timer before undoing' : undefined}
+              >
+                ↩ Undo: {state.undoStack[state.undoStack.length - 1].label}
+              </button>
             )}
           </div>
         ))}
