@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { v4 as uuidv4 } from 'uuid'
-import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType } from '../db/database'
+import { db, type Client, type Session, type BehaviorData, type ABCRecord, type BehaviorCategory, type DataType, type Trial, type PromptLevel, PROMPT_LABELS, PROMPT_ORDER } from '../db/database'
 import { formatDuration } from '../utils/time'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
@@ -26,7 +26,8 @@ interface BehaviorState {
   intervalTimeRemaining: number
   intervalRunning: boolean
   // Event recording (acquisition)
-  trials: boolean[]
+  trialsV2: Trial[]
+  selectedPrompt: PromptLevel
   // Deceleration
   decelCount: number
   decelDurationMs: number
@@ -78,7 +79,8 @@ export default function SessionPage() {
             intervals: [],
             intervalTimeRemaining: 15,
             intervalRunning: false,
-            trials: [],
+            trialsV2: [],
+            selectedPrompt: 'independent' as PromptLevel,
             decelCount: 0,
             decelDurationMs: 0,
             decelIsRunning: false,
@@ -114,9 +116,11 @@ export default function SessionPage() {
       totalDurationMs: state.totalDurationMs + (state.isRunning && state.startTime ? Date.now() - state.startTime : 0),
       intervalLengthSec: state.intervalLengthSec,
       intervals: state.intervals,
-      trials: state.trials,
-      totalTrials: state.trials.length,
-      correctTrials: state.trials.filter(Boolean).length,
+      trialsV2: state.trialsV2,
+      trials: state.trialsV2.map(t => t.correct), // keep for chart backward-compat
+      totalTrials: state.trialsV2.length,
+      correctTrials: state.trialsV2.filter(t => t.correct).length,
+      independentTrials: state.trialsV2.filter(t => t.correct && t.prompt === 'independent').length,
       // Deceleration data
       decelCount: state.decelCount,
       decelDurationMs: state.decelDurationMs + (state.decelIsRunning && state.decelStartTime ? Date.now() - state.decelStartTime : 0),
@@ -272,8 +276,17 @@ export default function SessionPage() {
     const state = behaviorStates.find(s => s.behaviorId === behaviorId)
     if (!state) return
 
-    pushUndo(behaviorId, correct ? 'correct trial' : 'incorrect trial', { trials: state.trials })
-    updateBehavior(behaviorId, { trials: [...state.trials, correct] })
+    const trial: Trial = {
+      correct,
+      prompt: state.selectedPrompt,
+      timestamp: new Date().toISOString(),
+    }
+    pushUndo(behaviorId, correct ? `correct (${PROMPT_LABELS[state.selectedPrompt]})` : 'incorrect', { trialsV2: state.trialsV2 })
+    updateBehavior(behaviorId, { trialsV2: [...state.trialsV2, trial] })
+  }
+
+  const setPrompt = (behaviorId: string, prompt: PromptLevel) => {
+    updateBehavior(behaviorId, { selectedPrompt: prompt })
   }
 
   // Deceleration functions
@@ -548,6 +561,30 @@ export default function SessionPage() {
 
                 {state.dataType === 'event' && (
                   <>
+                    {/* Prompt selector */}
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
+                      {PROMPT_ORDER.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setPrompt(state.behaviorId, p)}
+                          style={{
+                            flex: 1,
+                            minWidth: 44,
+                            padding: '6px 4px',
+                            borderRadius: 6,
+                            border: `2px solid ${state.selectedPrompt === p ? 'var(--primary)' : 'var(--border)'}`,
+                            background: state.selectedPrompt === p ? 'var(--primary)' : 'var(--background)',
+                            color: state.selectedPrompt === p ? 'white' : 'var(--text-secondary)',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {PROMPT_LABELS[p]}
+                        </button>
+                      ))}
+                    </div>
+
                     <div className="event-controls">
                       <button
                         className="event-btn correct"
@@ -570,34 +607,43 @@ export default function SessionPage() {
                       </button>
                     </div>
 
-                    <div className="event-summary">
-                      <div className="event-stat">
-                        <div className="value">{state.trials.length}</div>
-                        <div className="label">Total Trials</div>
-                      </div>
-                      <div className="event-stat">
-                        <div className="value">{state.trials.filter(Boolean).length}</div>
-                        <div className="label">Correct</div>
-                      </div>
-                      <div className="event-stat">
-                        <div className="value">
-                          {state.trials.length > 0
-                            ? Math.round((state.trials.filter(Boolean).length / state.trials.length) * 100)
-                            : 0}%
+                    {(() => {
+                      const total = state.trialsV2.length
+                      const correct = state.trialsV2.filter(t => t.correct).length
+                      const indep = state.trialsV2.filter(t => t.correct && t.prompt === 'independent').length
+                      return (
+                        <div className="event-summary" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                          <div className="event-stat">
+                            <div className="value">{total}</div>
+                            <div className="label">Total</div>
+                          </div>
+                          <div className="event-stat">
+                            <div className="value">{correct}</div>
+                            <div className="label">Correct</div>
+                          </div>
+                          <div className="event-stat">
+                            <div className="value">{total > 0 ? Math.round((correct / total) * 100) : 0}%</div>
+                            <div className="label">Accuracy</div>
+                          </div>
+                          <div className="event-stat">
+                            <div className="value" style={{ color: 'var(--success)' }}>{total > 0 ? Math.round((indep / total) * 100) : 0}%</div>
+                            <div className="label">Indep.</div>
+                          </div>
                         </div>
-                        <div className="label">Accuracy</div>
-                      </div>
-                    </div>
+                      )
+                    })()}
 
-                    {state.trials.length > 0 && (
+                    {state.trialsV2.length > 0 && (
                       <div className="trial-history">
-                        {state.trials.map((correct, idx) => (
+                        {state.trialsV2.map((trial, idx) => (
                           <div
                             key={idx}
-                            className={`trial-dot ${correct ? 'correct' : 'incorrect'}`}
-                            title={`Trial ${idx + 1}: ${correct ? 'Correct' : 'Incorrect'}`}
+                            className={`trial-dot ${trial.correct ? 'correct' : 'incorrect'}`}
+                            title={`Trial ${idx + 1}: ${trial.correct ? 'Correct' : 'Incorrect'} (${PROMPT_LABELS[trial.prompt]})`}
+                            style={{ fontSize: 10, width: 32, height: 32, flexDirection: 'column', gap: 1 }}
                           >
-                            {correct ? '+' : '-'}
+                            <span>{trial.correct ? '+' : '−'}</span>
+                            <span style={{ fontSize: 8, opacity: 0.85 }}>{PROMPT_LABELS[trial.prompt]}</span>
                           </div>
                         ))}
                       </div>

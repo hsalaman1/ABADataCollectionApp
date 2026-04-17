@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, type BehaviorData } from '../db/database'
+import { db, type BehaviorData, PROMPT_LABELS } from '../db/database'
 import { formatDuration, formatDateTime } from '../utils/time'
 import { exportSessionToCSV, exportSessionToPDF, exportNotesToText } from '../utils/export'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -42,12 +42,16 @@ export default function SessionDetailPage() {
         const occurrences = data.intervals.filter(Boolean).length
         const percentage = Math.round((occurrences / data.intervals.length) * 100)
         return `${percentage}% (${occurrences}/${data.intervals.length})`
-      case 'event':
-        if (!data.trials || data.trials.length === 0) return '0/0 (0%)'
-        const correct = data.trials.filter(Boolean).length
-        const total = data.trials.length
+      case 'event': {
+        const trials = data.trialsV2 ?? data.trials?.map(c => ({ correct: c, prompt: 'independent' as const })) ?? []
+        if (trials.length === 0) return '0/0 (0%)'
+        const correct = trials.filter(t => t.correct).length
+        const total = trials.length
+        const indep = trials.filter(t => t.correct && t.prompt === 'independent').length
         const pct = Math.round((correct / total) * 100)
-        return `${correct}/${total} (${pct}%)`
+        const indepPct = Math.round((indep / total) * 100)
+        return data.trialsV2 ? `${correct}/${total} (${pct}% · ${indepPct}% indep)` : `${correct}/${total} (${pct}%)`
+      }
       case 'deceleration':
         const count = data.decelCount ?? 0
         const duration = formatDuration(data.decelDurationMs ?? 0)
@@ -139,30 +143,56 @@ export default function SessionDetailPage() {
           </>
         )}
 
-        {session.behaviorData.some(bd => bd.dataType === 'event' && bd.trials && bd.trials.length > 0) && (
+        {session.behaviorData.some(bd => bd.dataType === 'event' && ((bd.trialsV2?.length ?? 0) > 0 || (bd.trials?.length ?? 0) > 0)) && (
           <>
             <h2 className="text-lg font-bold mb-2">Trial Details</h2>
             {session.behaviorData
-              .filter(bd => bd.dataType === 'event' && bd.trials && bd.trials.length > 0)
-              .map(bd => (
-                <div key={bd.behaviorId} className="card mb-4">
-                  <h3 className="font-bold mb-2">{bd.behaviorName}</h3>
-                  <p className="text-sm text-secondary mb-2">
-                    {bd.trials?.filter(Boolean).length}/{bd.trials?.length} correct ({Math.round(((bd.trials?.filter(Boolean).length ?? 0) / (bd.trials?.length ?? 1)) * 100)}%)
-                  </p>
-                  <div className="trial-history">
-                    {bd.trials?.map((correct, idx) => (
-                      <div
-                        key={idx}
-                        className={`trial-dot ${correct ? 'correct' : 'incorrect'}`}
-                        title={`Trial ${idx + 1}: ${correct ? 'Correct' : 'Incorrect'}`}
-                      >
-                        {correct ? '+' : '-'}
+              .filter(bd => bd.dataType === 'event' && ((bd.trialsV2?.length ?? 0) > 0 || (bd.trials?.length ?? 0) > 0))
+              .map(bd => {
+                const trials = bd.trialsV2 ?? bd.trials?.map(c => ({ correct: c, prompt: 'independent' as const, timestamp: '' })) ?? []
+                const total = trials.length
+                const correct = trials.filter(t => t.correct).length
+                const indep = trials.filter(t => t.correct && t.prompt === 'independent').length
+                const hasPrompts = !!bd.trialsV2
+                return (
+                  <div key={bd.behaviorId} className="card mb-4">
+                    <h3 className="font-bold mb-2">{bd.behaviorName}</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: hasPrompts ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+                      <div className="event-stat">
+                        <div className="value">{total}</div>
+                        <div className="label">Total</div>
                       </div>
-                    ))}
+                      <div className="event-stat">
+                        <div className="value">{correct}</div>
+                        <div className="label">Correct</div>
+                      </div>
+                      <div className="event-stat">
+                        <div className="value">{total > 0 ? Math.round((correct / total) * 100) : 0}%</div>
+                        <div className="label">Accuracy</div>
+                      </div>
+                      {hasPrompts && (
+                        <div className="event-stat">
+                          <div className="value" style={{ color: 'var(--success)' }}>{total > 0 ? Math.round((indep / total) * 100) : 0}%</div>
+                          <div className="label">Indep.</div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="trial-history">
+                      {trials.map((trial, idx) => (
+                        <div
+                          key={idx}
+                          className={`trial-dot ${trial.correct ? 'correct' : 'incorrect'}`}
+                          title={`Trial ${idx + 1}: ${trial.correct ? 'Correct' : 'Incorrect'}${hasPrompts ? ` (${PROMPT_LABELS[trial.prompt]})` : ''}`}
+                          style={hasPrompts ? { width: 32, height: 32, fontSize: 10, flexDirection: 'column', gap: 1 } : {}}
+                        >
+                          <span>{trial.correct ? '+' : '−'}</span>
+                          {hasPrompts && <span style={{ fontSize: 8, opacity: 0.85 }}>{PROMPT_LABELS[trial.prompt]}</span>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
           </>
         )}
 
