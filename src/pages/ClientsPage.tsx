@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { v4 as uuidv4 } from 'uuid'
@@ -22,6 +22,7 @@ export default function ClientsPage() {
   const [deleteClient, setDeleteClient] = useState<Client | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [isTabletView, setIsTabletView] = useState(window.innerWidth >= 960)
+  const [clientSearch, setClientSearch] = useState('')
 
   // Client form state
   const [name, setName] = useState('')
@@ -206,6 +207,13 @@ export default function ClientsPage() {
   const acqCount = behaviors.filter(b => b.category === 'acquisition').length
   const decelCount = behaviors.filter(b => b.category === 'deceleration').length
 
+  const filteredClients = useMemo(() => {
+    if (!clients) return []
+    const q = clientSearch.trim().toLowerCase()
+    if (!q) return clients
+    return clients.filter(c => c.name.toLowerCase().includes(q))
+  }, [clients, clientSearch])
+
   // Mobile view - navigate to separate page
   if (!isTabletView) {
     return (
@@ -216,9 +224,32 @@ export default function ClientsPage() {
         </header>
 
         <div className="container">
+          {clients && clients.length > 0 && (
+            <div className="input-group mb-2" style={{ position: 'relative' }}>
+              <input
+                type="search"
+                value={clientSearch}
+                onChange={e => setClientSearch(e.target.value)}
+                placeholder="Search clients…"
+                style={{ paddingLeft: 36 }}
+              />
+              <svg
+                width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="var(--text-secondary)" strokeWidth="2"
+                style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              >
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </div>
+          )}
           {clients && clients.length > 0 ? (
             <div>
-              {clients.map(client => (
+              {filteredClients.length === 0 && (
+                <div className="card text-center text-secondary mb-2" style={{ padding: 16 }}>
+                  No clients match "{clientSearch}"
+                </div>
+              )}
+              {filteredClients.map(client => (
                 <div
                   key={client.id}
                   className="list-item"
@@ -299,18 +330,35 @@ export default function ClientsPage() {
           <div className="panel-header">
             <h2>Clients</h2>
           </div>
+          <div style={{ padding: '8px 12px 0', position: 'relative' }}>
+            <input
+              type="search"
+              value={clientSearch}
+              onChange={e => setClientSearch(e.target.value)}
+              placeholder="Search…"
+              style={{ width: '100%', padding: '6px 8px 6px 30px', fontSize: 13, border: '1px solid var(--border)', borderRadius: 6, background: 'var(--background)', color: 'var(--text-primary)' }}
+            />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"
+              style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </div>
           <div className="panel-content">
             {clients && clients.length > 0 ? (
-              clients.map(client => (
-                <div
-                  key={client.id}
-                  className={`panel-list-item ${selectedClient?.id === client.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedClient(client)}
-                >
-                  <div className="panel-list-item-name">{client.name}</div>
-                  <div className="panel-list-item-count">{getSessionCount(client.id)}</div>
-                </div>
-              ))
+              filteredClients.length === 0 ? (
+                <div className="panel-empty">No clients match "{clientSearch}"</div>
+              ) : (
+                filteredClients.map(client => (
+                  <div
+                    key={client.id}
+                    className={`panel-list-item ${selectedClient?.id === client.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedClient(client)}
+                  >
+                    <div className="panel-list-item-name">{client.name}</div>
+                    <div className="panel-list-item-count">{getSessionCount(client.id)}</div>
+                  </div>
+                ))
+              )
             ) : (
               <div className="panel-empty">No clients yet</div>
             )}

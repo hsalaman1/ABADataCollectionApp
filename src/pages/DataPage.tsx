@@ -36,6 +36,9 @@ export default function DataPage() {
 
   const [selectedBehaviorId, setSelectedBehaviorId] = useState<string | null>(null)
   const [showAddSession, setShowAddSession] = useState(false)
+  const [sessionDateFrom, setSessionDateFrom] = useState('')
+  const [sessionDateTo, setSessionDateTo] = useState('')
+  const [sessionNotesQuery, setSessionNotesQuery] = useState('')
   const [manualSession, setManualSession] = useState<ManualSessionData>({
     date: new Date().toISOString().split('T')[0],
     durationMinutes: 30,
@@ -81,6 +84,22 @@ export default function DataPage() {
       return dataPoint
     })
   }, [sessions, selectedClient])
+
+  const filtersActive = !!(sessionDateFrom || sessionDateTo || sessionNotesQuery.trim())
+
+  const filteredSessions = useMemo(() => {
+    if (!sessions) return []
+    return sessions.filter(s => {
+      if (sessionDateFrom && s.startTime < new Date(sessionDateFrom).toISOString()) return false
+      if (sessionDateTo) {
+        const endOfDay = new Date(sessionDateTo)
+        endOfDay.setDate(endOfDay.getDate() + 1)
+        if (s.startTime >= endOfDay.toISOString()) return false
+      }
+      if (sessionNotesQuery.trim() && !s.notes.toLowerCase().includes(sessionNotesQuery.trim().toLowerCase())) return false
+      return true
+    })
+  }, [sessions, sessionDateFrom, sessionDateTo, sessionNotesQuery])
 
   const selectedBehavior = selectedClient?.targetBehaviors.find(b => b.id === selectedBehaviorId)
   const behaviorsToChart = selectedBehavior
@@ -327,11 +346,52 @@ export default function DataPage() {
               </div>
             )}
 
-            <h2 className="text-lg font-bold mb-2">Session History</h2>
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-lg font-bold">Session History</h2>
+              {filtersActive && (
+                <button
+                  className="text-sm"
+                  style={{ color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { setSessionDateFrom(''); setSessionDateTo(''); setSessionNotesQuery('') }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            <div className="card mb-4" style={{ padding: 12 }}>
+              <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>From</label>
+                  <input type="date" value={sessionDateFrom} onChange={e => setSessionDateFrom(e.target.value)}
+                    style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--surface)', color: 'var(--text-primary)' }} />
+                </div>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>To</label>
+                  <input type="date" value={sessionDateTo} onChange={e => setSessionDateTo(e.target.value)}
+                    style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--surface)', color: 'var(--text-primary)' }} />
+                </div>
+                <div style={{ flex: '2 1 160px', position: 'relative' }}>
+                  <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Notes contain</label>
+                  <input type="search" value={sessionNotesQuery} onChange={e => setSessionNotesQuery(e.target.value)}
+                    placeholder="Search notes…"
+                    style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, background: 'var(--surface)', color: 'var(--text-primary)' }} />
+                </div>
+              </div>
+              {filtersActive && (
+                <p className="text-sm text-secondary mt-2">
+                  Showing {filteredSessions.length} of {sessions?.length ?? 0} session{sessions?.length !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
 
             {sessions && sessions.length > 0 ? (
               <div>
-                {sessions.map(session => (
+                {filteredSessions.length === 0 ? (
+                  <div className="card text-center text-secondary mb-4" style={{ padding: 24 }}>
+                    No sessions match the current filters
+                  </div>
+                ) : filteredSessions.map(session => (
                   <div
                     key={session.id}
                     className="session-summary"
