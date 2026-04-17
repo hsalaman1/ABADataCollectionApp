@@ -471,7 +471,6 @@ export default function ClientFormPage() {
             id="behaviorType"
             value={behaviorType}
             onChange={e => setBehaviorType(e.target.value as DataType)}
-            disabled={behaviorCategory === 'deceleration'}
           >
             {behaviorCategory === 'acquisition' ? (
               <>
@@ -482,12 +481,16 @@ export default function ClientFormPage() {
                 <option value="interval">Interval (occurrence each interval)</option>
               </>
             ) : (
-              <option value="deceleration">Deceleration (frequency + duration + ABC)</option>
+              <>
+                <option value="deceleration">Frequency + Duration + ABC (full)</option>
+                <option value="frequency">Frequency only (count occurrences)</option>
+                <option value="duration">Duration only (time how long it lasts)</option>
+              </>
             )}
           </select>
-          {behaviorCategory === 'deceleration' && (
+          {behaviorCategory === 'deceleration' && behaviorType === 'deceleration' && (
             <p className="text-sm text-secondary mt-2">
-              Deceleration behaviors track frequency count, duration, and ABC data automatically.
+              Tracks frequency count, duration, and ABC data together.
             </p>
           )}
         </div>

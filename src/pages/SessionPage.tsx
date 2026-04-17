@@ -509,7 +509,7 @@ export default function SessionPage() {
             </div>
 
             {/* Acquisition behavior controls */}
-            {state.category === 'acquisition' && (
+            {(state.category === 'acquisition' || (state.category === 'deceleration' && state.dataType !== 'deceleration')) && (
               <>
                 {state.dataType === 'frequency' && (
                   <button
@@ -808,8 +808,8 @@ export default function SessionPage() {
               </>
             )}
 
-            {/* Deceleration behavior controls */}
-            {state.category === 'deceleration' && (
+            {/* Deceleration behavior controls — only for the combined type */}
+            {state.category === 'deceleration' && state.dataType === 'deceleration' && (
               <div className="decel-controls">
                 {/* Frequency counter + Duration timer row */}
                 <div className="decel-row">
