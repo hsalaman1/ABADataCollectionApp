@@ -283,11 +283,9 @@ async function downloadSessionDocx(client, elapsed, programStates, timerRefs, ab
 
   // Session Notes (SOAP)
   const noteRows = [
-    ['Quick Note', data.notes.quick],
-    ['S — Subjective', data.notes.subjective],
-    ['O — Objective', data.notes.objective],
-    ['A — Assessment', data.notes.assessment],
-    ['P — Plan', data.notes.plan],
+    ['Session Notes', data.notes.sessionNote],
+    ['Modifications', data.notes.modifications],
+    ['Next Session / Follow-Up', data.notes.followUp],
   ].filter(([, v]) => v && v.trim());
 
   if (noteRows.length > 0) {
@@ -442,11 +440,9 @@ function downloadSessionPdf(client, elapsed, programStates, timerRefs, abcRecord
 
   // Session Notes
   const noteRows = [
-    ['Quick Note', data.notes.quick],
-    ['S — Subjective', data.notes.subjective],
-    ['O — Objective', data.notes.objective],
-    ['A — Assessment', data.notes.assessment],
-    ['P — Plan', data.notes.plan],
+    ['Session Notes', data.notes.sessionNote],
+    ['Modifications', data.notes.modifications],
+    ['Next Session / Follow-Up', data.notes.followUp],
   ].filter(([, v]) => v && v.trim());
 
   if (noteRows.length > 0) {

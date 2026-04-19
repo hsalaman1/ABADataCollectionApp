@@ -76,10 +76,9 @@ function NotesSheet({ isOpen, onClose, notes, onNotesChange }) {
   if (!isOpen) return null;
 
   const fields = [
-    { key: 'subjective', label: 'S — Subjective', placeholder: 'Client presentation, caregiver report...' },
-    { key: 'objective', label: 'O — Objective', placeholder: 'Auto-populated from session data...', auto: true },
-    { key: 'assessment', label: 'A — Assessment', placeholder: 'Clinical interpretation...' },
-    { key: 'plan', label: 'P — Plan', placeholder: 'Next session goals, modifications...' },
+    { key: 'sessionNote', label: 'Session Notes', placeholder: 'How did the session go? Client behavior, motivation, engagement...' },
+    { key: 'modifications', label: 'Modifications', placeholder: 'Any changes made to programs, prompting, reinforcement, materials...' },
+    { key: 'followUp', label: 'Next Session / Follow-Up', placeholder: 'Goals or things to focus on next session, parent/caregiver follow-up items...' },
   ];
 
   return (
@@ -90,30 +89,14 @@ function NotesSheet({ isOpen, onClose, notes, onNotesChange }) {
           <h3 style={sheetStyles.sheetTitle}>Session Notes</h3>
           <button onClick={onClose} style={sheetStyles.closeBtn}>✕</button>
         </div>
-        {/* Quick note */}
-        <div style={{ marginBottom: 12 }}>
-          <label style={sheetStyles.label}>Quick Note</label>
-          <textarea
-            value={notes.quick || ''}
-            onChange={e => onNotesChange({ ...notes, quick: e.target.value })}
-            placeholder="Jot a quick note..."
-            style={{ ...sheetStyles.textarea, minHeight: 60 }}
-          />
-        </div>
-        {/* SOAP */}
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 8, letterSpacing: '0.05em' }}>SOAP FORMAT</div>
         {fields.map(f => (
-          <div key={f.key} style={{ marginBottom: 10 }}>
+          <div key={f.key} style={{ marginBottom: 14 }}>
             <label style={sheetStyles.label}>{f.label}</label>
             <textarea
               value={notes[f.key] || ''}
               onChange={e => onNotesChange({ ...notes, [f.key]: e.target.value })}
               placeholder={f.placeholder}
-              style={{
-                ...sheetStyles.textarea,
-                minHeight: 50,
-                background: f.auto ? '#f0fdfa' : '#fff',
-              }}
+              style={{ ...sheetStyles.textarea, minHeight: 70 }}
             />
           </div>
         ))}
