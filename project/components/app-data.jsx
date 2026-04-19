@@ -166,6 +166,7 @@ function SessionScreen({ client, onEnd }) {
     timerRefs[p.id] = useIndependentTimer();
   });
 
+  const [isEnded, setIsEnded] = React.useState(false);
   const [showNotes, setShowNotes] = React.useState(false);
   const [showABC, setShowABC] = React.useState(false);
   const [notes, setNotes] = React.useState({});
@@ -204,7 +205,11 @@ function SessionScreen({ client, onEnd }) {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <SessionHeader clientName={client.name} elapsed={elapsed} isPaused={isPaused}
-        onPause={handlePause} onResume={handleResume} onEnd={onEnd} />
+        onPause={handlePause} onResume={handleResume}
+        onEnd={() => { setIsEnded(true); if (!isPaused) handlePause(); }}
+        isEnded={isEnded}
+        onResumeSession={() => { setIsEnded(false); handleResume(); }}
+        onClose={onEnd} />
       <div style={{ padding: '10px 16px', display: 'flex', gap: 6, alignItems: 'center',
         background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
         {[{ key: 'all', label: `All (${activePrograms.length})` },
