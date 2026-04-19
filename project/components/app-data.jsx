@@ -237,7 +237,11 @@ function SessionScreen({ client, onEnd }) {
         )}
       </div>
       <SessionActionBar onNotes={() => setShowNotes(true)} onABC={() => setShowABC(true)}
-        onExport={fmt => alert(`Export ${fmt.toUpperCase()}`)}
+        onExport={fmt => {
+          const progs = client.programs.filter(p => p.isActive !== false);
+          if (fmt === 'docx') downloadSessionDocx(client, elapsed, programStates, timerRefs, abcRecords, notes, progs);
+          else if (fmt === 'pdf') downloadSessionPdf(client, elapsed, programStates, timerRefs, abcRecords, notes, progs);
+        }}
         notesCount={Object.values(notes).filter(Boolean).length} abcCount={abcRecords.length} />
       <NotesSheet isOpen={showNotes} onClose={() => setShowNotes(false)} notes={notes} onNotesChange={setNotes} />
       <ABCSheet isOpen={showABC} onClose={() => setShowABC(false)} records={abcRecords}
