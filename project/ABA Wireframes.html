@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ABA Data Collection — Wireframe Exploration</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+  body { background: #f5f3ef; font-family: 'DM Sans', sans-serif; color: #2a2a2a; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const { useState, useEffect, useRef } = React;
+
+// ── Wireframe primitives ──
+const SK = { // sketch styles
+  font: "'DM Sans', sans-serif",
+  fontClean: "'DM Sans', sans-serif",
+  border: '#bbb',
+  bg: '#fff',
+  accent: '#3366cc',
+  accentLight: '#e8eef8',
+  danger: '#cc4444',
+  dangerLight: '#fce8e8',
+  success: '#339944',
+  successLight: '#e8f5ec',
+  muted: '#888',
+  text: '#2a2a2a',
+  surface: '#f9f8f5',
+};
+
+// Simple box component
+function Box({ children, style, onClick, ...props }) {
+  return <div onClick={onClick} style={{ border: `1.5px solid ${SK.border}`, borderRadius: 8, background: SK.bg, ...style }} {...props}>{children}</div>;
+}
+
+function Btn({ children, variant = 'default', style, small, ...props }) {
+  const base = { fontFamily: SK.font, fontSize: small ? 15 : 18, padding: small ? '4px 10px' : '8px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 600 };
+  const variants = {
+    default: { background: '#eee', color: SK.text },
+    primary: { background: SK.accent, color: '#fff' },
+    danger: { background: SK.danger, color: '#fff' },
+    outline: { background: 'transparent', border: `1.5px solid ${SK.border}`, color: SK.text },
+    success: { background: SK.success, color: '#fff' },
+  };
+  return <button style={{ ...base, ...variants[variant], ...style }} {...props}>{children}</button>;
+}
+
+function Label({ children, style }) {
+  return <span style={{ fontFamily: SK.font, fontSize: 14, color: SK.muted, fontWeight: 400, ...style }}>{children}</span>;
+}
+
+function Title({ children, style, size = 24 }) {
+  return <div style={{ fontFamily: SK.font, fontSize: size, fontWeight: 600, color: SK.text, ...style }}>{children}</div>;
+}
+
+function Placeholder({ label, h = 60, style }) {
+  return (
+    <div style={{ height: h, border: `1.5px dashed ${SK.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9f8f5', ...style }}>
+      <span style={{ fontFamily: SK.font, fontSize: 15, color: SK.muted }}>{label}</span>
+    </div>
+  );
+}
+
+// ── Annotation arrow ──
+function Note({ children, style }) {
+  return <div style={{ fontFamily: SK.font, fontSize: 14, color: SK.accent, fontStyle: 'italic', padding: '4px 0', ...style }}>{children}</div>;
+}
+
+// ── Phone frame (simple wireframe style) ──
+function PhoneFrame({ children, label, style }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, ...style }}>
+      {label && <Label style={{ fontSize: 16, color: SK.text, fontWeight: 600 }}>{label}</Label>}
+      <div style={{
+        width: 320, height: 640, borderRadius: 32, border: `2px solid #999`,
+        background: SK.surface, overflow: 'hidden', position: 'relative',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Notch */}
+        <div style={{ height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: 80, height: 24, borderRadius: 12, background: '#222' }} />
+        </div>
+        {/* Content */}
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </div>
+        {/* Home indicator */}
+        <div style={{ height: 20, display: 'flex', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ width: 100, height: 4, borderRadius: 2, background: '#ccc' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tablet frame ──
+function TabletFrame({ children, label, style, landscape }) {
+  const w = landscape ? 680 : 480;
+  const h = landscape ? 460 : 640;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, ...style }}>
+      {label && <Label style={{ fontSize: 16, color: SK.text, fontWeight: 600 }}>{label}</Label>}
+      <div style={{
+        width: w, height: h, borderRadius: 20, border: `2px solid #999`,
+        background: SK.surface, overflow: 'hidden',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════
+// OPTION A — "Sidebar + Dashboard"
+// Nav moves to a sidebar on tablet; phone keeps bottom tabs.
+// Session recording uses a compact grid.
+// ══════════════════════════════════════════════
+
+function OptionA_PhoneHome() {
+  return (
+    <PhoneFrame label="A: Phone — Clients">
+      {/* Header */}
+      <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Title size={22}>Clients</Title>
+        <Btn variant="primary" small>+ New</Btn>
+      </div>
+      {/* Search */}
+      <div style={{ padding: '0 16px 8px' }}>
+        <Box style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: SK.muted }}>🔍</span>
+          <span style={{ fontFamily: SK.font, color: SK.muted, fontSize: 16 }}>Search clients...</span>
+        </Box>
+      </div>
+      {/* Client cards */}
+      {['Alex M.', 'Jordan K.', 'Riley S.', 'Taylor P.'].map((name, i) => (
+        <div key={i} style={{ padding: '10px 16px', borderBottom: `1px solid #eee`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: SK.font, fontSize: 18, fontWeight: 600 }}>{name}</div>
+            <div style={{ fontFamily: SK.font, fontSize: 13, color: SK.muted }}>{3 + i} behaviors · {5 + i * 2} sessions</div>
+          </div>
+          <div style={{ fontFamily: SK.font, fontSize: 12, color: SK.accent }}>▸</div>
+        </div>
+      ))}
+      <Note style={{ padding: '12px 16px' }}>↑ Tap to edit client, swipe to delete</Note>
+      {/* Bottom nav */}
+      <div style={{ marginTop: 'auto', borderTop: `1.5px solid ${SK.border}`, display: 'flex', padding: '8px 0 4px' }}>
+        {['👥 Clients', '⏱ Session', '📊 Data', '📝 Reports'].map((t, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center', fontFamily: SK.font, fontSize: 12, color: i === 0 ? SK.accent : SK.muted, fontWeight: i === 0 ? 700 : 400 }}>{t}</div>
+        ))}
+      </div>
+    </PhoneFrame>
+  );
+}
+
+function OptionA_PhoneSession() {
+  return (
+    <PhoneFrame label="A: Phone — Session (compact grid)">
+      {/* Header with timer */}
+      <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: SK.accentLight }}>
+        <div>
+          <div style={{ fontFamily: SK.font, fontSize: 14, color: SK.muted }}>Alex M.</div>
+          <div style={{ fontFamily: SK.fontClean, fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>00:12:34</div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Btn variant="outline" small>⏸</Btn>
+          <Btn variant="danger" small>End</Btn>
+        </div>
+      </div>
+      {/* Compact behavior grid */}
+      <div style={{ padding: '8px 12px' }}>
+        <Note>↓ Compact grid — all behaviors visible at once</Note>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6 }}>
+          {/* Acquisition */}
+          <Box style={{ padding: 10 }}>
+            <Label>1-Step Instructions</Label>
+            <div style={{ fontFamily: SK.fontClean, fontSize: 28, fontWeight: 700, textAlign: 'center', margin: '6px 0' }}>7/10</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <Btn variant="success" small style={{ flex: 1, fontSize: 14 }}>✓</Btn>
+              <Btn variant="danger" small style={{ flex: 1, fontSize: 14 }}>✗</Btn>
+            </div>
+            <Label style={{ fontSize: 11, display: 'block', textAlign: 'center', marginTop: 4 }}>70% · Ind</Label>
+          </Box>
+          <Box style={{ padding: 10 }}>
+            <Label>Greetings</Label>
+            <div style={{ fontFamily: SK.fontClean, fontSize: 28, fontWeight: 700, textAlign: 'center', margin: '6px 0' }}>3/5</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <Btn variant="success" small style={{ flex: 1, fontSize: 14 }}>✓</Btn>
+              <Btn variant="danger" small style={{ flex: 1, fontSize: 14 }}>✗</Btn>
+            </div>
+            <Label style={{ fontSize: 11, display: 'block', textAlign: 'center', marginTop: 4 }}>60% · GP</Label>
+          </Box>
+          {/* Deceleration */}
+          <Box style={{ padding: 10, borderColor: SK.danger }}>
+            <Label style={{ color: SK.danger }}>Aggression ↓</Label>
+            <div style={{ fontFamily: SK.fontClean, fontSize: 28, fontWeight: 700, textAlign: 'center', margin: '6px 0' }}>2</div>
+            <Btn variant="danger" small style={{ width: '100%', fontSize: 14 }}>+ Count</Btn>
+            <Label style={{ fontSize: 11, display: 'block', textAlign: 'center', marginTop: 4 }}>01:23 total</Label>
+          </Box>
+          <Box style={{ padding: 10, borderColor: SK.danger }}>
+            <Label style={{ color: SK.danger }}>Elopement ↓</Label>
+            <div style={{ fontFamily: SK.fontClean, fontSize: 28, fontWeight: 700, textAlign: 'center', margin: '6px 0' }}>0</div>
+            <Btn variant="danger" small style={{ width: '100%', fontSize: 14 }}>+ Count</Btn>
+            <Label style={{ fontSize: 11, display: 'block', textAlign: 'center', marginTop: 4 }}>00:00</Label>
+          </Box>
+        </div>
+      </div>
+      {/* Quick actions */}
+      <div style={{ padding: '4px 12px', display: 'flex', gap: 6 }}>
+        <Btn variant="outline" small style={{ flex: 1 }}>📝 Notes</Btn>
+        <Btn variant="outline" small style={{ flex: 1 }}>ABC</Btn>
+      </div>
+      <Note style={{ padding: '4px 16px' }}>↑ Notes + ABC in slide-up sheet, not inline</Note>
+    </PhoneFrame>
+  );
+}
+
+function OptionA_TabletSession() {
+  return (
+    <TabletFrame label="A: Tablet — Session (sidebar nav + wide grid)" landscape>
+      <div style={{ display: 'flex', height: '100%' }}>
+        {/* Sidebar */}
+        <div style={{ width: 60, background: '#2a2a2a', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 0', gap: 16, flexShrink: 0 }}>
+          {['👥', '⏱', '📊', '📝', '⚙'].map((icon, i) => (
+            <div key={i} style={{ width: 36, height: 36, borderRadius: 8, background: i === 1 ? 'rgba(255,255,255,0.15)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{icon}</div>
+          ))}
+        </div>
+        {/* Main */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* Top bar */}
+          <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid #eee` }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <Title size={18}>Alex M. — Session</Title>
+              <span style={{ fontFamily: SK.fontClean, fontSize: 20, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>00:12:34</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <Btn variant="outline" small>⏸ Pause</Btn>
+              <Btn variant="danger" small>End Session</Btn>
+            </div>
+          </div>
+          {/* Grid of behaviors */}
+          <div style={{ flex: 1, padding: 12, overflow: 'auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+              {/* Acq behaviors */}
+              {[
+                { name: '1-Step Instructions', val: '7/10', pct: '70%', type: 'acq' },
+                { name: 'Greetings', val: '3/5', pct: '60%', type: 'acq' },
+                { name: 'Waiting', val: '02:15', pct: '—', type: 'acq' },
+                { name: 'Aggression', val: '2', pct: '01:23', type: 'decel' },
+                { name: 'Elopement', val: '0', pct: '00:00', type: 'decel' },
+                { name: 'SIB', val: '1', pct: '00:45', type: 'decel' },
+              ].map((b, i) => (
+                <Box key={i} style={{ padding: 12, borderColor: b.type === 'decel' ? SK.danger : SK.border }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Label style={{ color: b.type === 'decel' ? SK.danger : SK.muted, fontSize: 13 }}>{b.name}{b.type === 'decel' ? ' ↓' : ''}</Label>
+                    <Label style={{ fontSize: 11 }}>{b.pct}</Label>
+                  </div>
+                  <div style={{ fontFamily: SK.fontClean, fontSize: 32, fontWeight: 700, textAlign: 'center', margin: '4px 0' }}>{b.val}</div>
+                  {b.type === 'acq' ? (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <Btn variant="success" small style={{ flex: 1 }}>✓</Btn>
+                      <Btn variant="danger" small style={{ flex: 1 }}>✗</Btn>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <Btn variant="danger" small style={{ flex: 1 }}>+ Count</Btn>
+                      <Btn variant="outline" small style={{ flex: 1 }}>⏱</Btn>
+                    </div>
+                  )}
+                </Box>
+              ))}
+            </div>
+          </div>
+          {/* Bottom bar */}
+          <div style={{ padding: '6px 12px', borderTop: `1px solid #eee`, display: 'flex', gap: 8 }}>
+            <Btn variant="outline" small style={{ flex: 1 }}>📝 SOAP Notes</Btn>
+            <Btn variant="outline" small style={{ flex: 1 }}>ABC Data</Btn>
+            <Btn variant="outline" small style={{ flex: 1 }}>✍️ Signature</Btn>
+            <Btn variant="outline" small style={{ flex: 1 }}>🔢 Service Codes</Btn>
+          </div>
+        </div>
+      </div>
+    </TabletFrame>
+  );
+}
+
+// ══════════════════════════════════════════════
+// OPTION B — "Card Stack + Swipe"
+// Focuses on one behavior at a time. Swipe/arrow to move between them.
+// Minimizes cognitive load during data collection.
+// ══════════════════════════════════════════════
+
+function OptionB_PhoneSession() {
+  return (
+    <PhoneFrame label="B: Phone — Session (one-at-a-time)">
+      {/* Sticky header */}
+      <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid #eee` }}>
+        <Title size={16}>Alex M.</Title>
+        <span style={{ fontFamily: SK.fontClean, fontSize: 18, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>00:12:34</span>
+        <Btn variant="danger" small>End</Btn>
+      </div>
+      {/* Behavior dots (pagination) */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 6, padding: '8px 0' }}>
+        {[SK.accent, '#ccc', '#ccc', '#ccc', '#ccc'].map((c, i) => (
+          <div key={i} style={{ width: i === 0 ? 20 : 8, height: 8, borderRadius: 4, background: c }} />
+        ))}
+      </div>
+      {/* Big card — single behavior */}
+      <div style={{ padding: '0 16px', flex: 1 }}>
+        <Box style={{ padding: 20, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Title size={20}>1-Step Instructions</Title>
+          <Label style={{ marginBottom: 12 }}>Event Recording · Acquisition</Label>
+          {/* Big score */}
+          <div style={{ fontFamily: SK.fontClean, fontSize: 64, fontWeight: 700, margin: '8px 0' }}>70%</div>
+          <div style={{ fontFamily: SK.font, fontSize: 16, color: SK.muted }}>7 of 10 trials correct</div>
+          {/* Prompt selector */}
+          <div style={{ display: 'flex', gap: 4, margin: '16px 0 12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['Ind', 'Ges', 'Mod', 'VP', 'PP', 'FP'].map((p, i) => (
+              <div key={i} style={{
+                padding: '6px 10px', borderRadius: 16, fontSize: 13, fontFamily: SK.font,
+                background: i === 0 ? SK.accent : '#eee',
+                color: i === 0 ? '#fff' : SK.text, fontWeight: 600,
+              }}>{p}</div>
+            ))}
+          </div>
+          {/* Big buttons */}
+          <div style={{ display: 'flex', gap: 12, width: '100%', marginTop: 'auto' }}>
+            <Btn variant="success" style={{ flex: 1, padding: '20px 0', fontSize: 22 }}>✓ Correct</Btn>
+            <Btn variant="danger" style={{ flex: 1, padding: '20px 0', fontSize: 22 }}>✗ Incorrect</Btn>
+          </div>
+          {/* Trial dots */}
+          <div style={{ display: 'flex', gap: 3, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {[1,1,1,0,1,1,1,0,0,1].map((c, i) => (
+              <div key={i} style={{ width: 18, height: 18, borderRadius: 9, background: c ? SK.success : SK.danger, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700 }}>{c ? '+' : '−'}</div>
+            ))}
+          </div>
+        </Box>
+      </div>
+      <Note style={{ padding: '8px 16px', textAlign: 'center' }}>← Swipe to next behavior →</Note>
+    </PhoneFrame>
+  );
+}
+
+function OptionB_PhoneNotes() {
+  return (
+    <PhoneFrame label="B: Phone — SOAP Notes (slide-up)">
+      {/* Dimmed session behind */}
+      <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', padding: 16 }}>
+        <div style={{ opacity: 0.3, fontFamily: SK.font, color: '#fff', textAlign: 'center', marginTop: 60 }}>Session in progress...</div>
+      </div>
+      {/* Bottom sheet */}
+      <Box style={{ borderRadius: '16px 16px 0 0', padding: 16, marginTop: 'auto' }}>
+        <div style={{ width: 40, height: 4, borderRadius: 2, background: '#ddd', margin: '0 auto 12px' }} />
+        <Title size={18}>Session Notes</Title>
+        {/* Tab selector */}
+        <div style={{ display: 'flex', gap: 0, margin: '10px 0', border: `1.5px solid ${SK.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          {['Quick', 'SOAP', 'ABC'].map((t, i) => (
+            <div key={i} style={{ flex: 1, textAlign: 'center', padding: '6px 0', fontFamily: SK.font, fontSize: 14, background: i === 1 ? SK.accent : 'transparent', color: i === 1 ? '#fff' : SK.text, fontWeight: 600 }}>{t}</div>
+          ))}
+        </div>
+        {/* SOAP fields */}
+        {['S — Subjective', 'O — Objective (auto-filled)', 'A — Assessment', 'P — Plan'].map((f, i) => (
+          <div key={i} style={{ marginBottom: 8 }}>
+            <Label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>{f}</Label>
+            <Box style={{ padding: '8px 10px', minHeight: i === 1 ? 40 : 28, background: i === 1 ? SK.accentLight : SK.bg }}>
+              {i === 1 && <span style={{ fontFamily: SK.font, fontSize: 13, color: SK.muted }}>7/10 trials on 1-step, 2 aggressions...</span>}
+            </Box>
+          </div>
+        ))}
+        <Btn variant="primary" style={{ width: '100%', marginTop: 4 }}>Save Notes</Btn>
+      </Box>
+    </PhoneFrame>
+  );
+}
+
+// ══════════════════════════════════════════════
+// OPTION C — "Horizontal Lanes"
+// All behaviors visible in horizontal scrollable lanes.
+// Acquisition on top, deceleration on bottom.
+// ══════════════════════════════════════════════
+
+function OptionC_PhoneSession() {
+  return (
+    <PhoneFrame label="C: Phone — Session (lanes)">
+      {/* Header */}
+      <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#2a2a2a', color: '#fff' }}>
+        <div>
+          <div style={{ fontFamily: SK.font, fontSize: 13, color: '#aaa' }}>Alex M.</div>
+          <div style={{ fontFamily: SK.fontClean, fontSize: 20, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>00:12:34</div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Btn variant="outline" small style={{ borderColor: '#666', color: '#ccc' }}>⏸</Btn>
+          <Btn variant="danger" small>End</Btn>
+        </div>
+      </div>
+      {/* Acquisition lane */}
+      <div style={{ padding: '8px 12px 4px' }}>
+        <Label style={{ fontSize: 12, fontWeight: 600, color: SK.accent }}>ACQUISITION</Label>
+      </div>
+      <div style={{ display: 'flex', gap: 8, padding: '0 12px', overflowX: 'auto' }}>
+        {[
+          { name: '1-Step', val: '70%', sub: '7/10' },
+          { name: 'Greetings', val: '60%', sub: '3/5' },
+          { name: 'Waiting', val: '2:15', sub: 'duration' },
+        ].map((b, i) => (
+          <Box key={i} style={{ minWidth: 130, padding: 10, flexShrink: 0 }}>
+            <Label style={{ fontSize: 12 }}>{b.name}</Label>
+            <div style={{ fontFamily: SK.fontClean, fontSize: 26, fontWeight: 700, textAlign: 'center', margin: '4px 0' }}>{b.val}</div>
+            <Label style={{ fontSize: 11, display: 'block', textAlign: 'center' }}>{b.sub}</Label>
+            <div style={{ display: 'flex', gap: 3, marginTop: 6 }}>
+              <Btn variant="success" small style={{ flex: 1, fontSize: 12, padding: '4px 0' }}>✓</Btn>
+              <Btn variant="danger" small style={{ flex: 1, fontSize: 12, padding: '4px 0' }}>✗</Btn>
+            </div>
+          </Box>
+        ))}
+      </div>
+      <Note style={{ padding: '2px 16px' }}>← scroll for more →</Note>
+      {/* Deceleration lane */}
+      <div style={{ padding: '8px 12px 4px' }}>
+        <Label style={{ fontSize: 12, fontWeight: 600, color: SK.danger }}>DECELERATION</Label>
+      </div>
+      <div style={{ display: 'flex', gap: 8, padding: '0 12px' }}>
+        {[
+          { name: 'Aggression', count: 2, dur: '01:23' },
+          { name: 'Elopement', count: 0, dur: '00:00' },
+        ].map((b, i) => (
+          <Box key={i} style={{ minWidth: 130, padding: 10, flexShrink: 0, borderColor: SK.danger }}>
+            <Label style={{ fontSize: 12, color: SK.danger }}>{b.name}</Label>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 8, margin: '4px 0' }}>
+              <span style={{ fontFamily: SK.fontClean, fontSize: 26, fontWeight: 700 }}>{b.count}</span>
+              <span style={{ fontFamily: SK.font, fontSize: 13, color: SK.muted }}>{b.dur}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 3, marginTop: 4 }}>
+              <Btn variant="danger" small style={{ flex: 1, fontSize: 12, padding: '4px 0' }}>+1</Btn>
+              <Btn variant="outline" small style={{ flex: 1, fontSize: 12, padding: '4px 0' }}>⏱</Btn>
+              <Btn variant="outline" small style={{ flex: 1, fontSize: 12, padding: '4px 0' }}>ABC</Btn>
+            </div>
+          </Box>
+        ))}
+      </div>
+      {/* Quick actions at bottom */}
+      <div style={{ marginTop: 'auto', padding: '8px 12px', display: 'flex', gap: 6 }}>
+        <Btn variant="outline" small style={{ flex: 1 }}>📝 Notes</Btn>
+        <Btn variant="outline" small style={{ flex: 1 }}>✍️ Sign</Btn>
+        <Btn variant="outline" small style={{ flex: 1 }}>🔢 Codes</Btn>
+      </div>
+    </PhoneFrame>
+  );
+}
+
+function OptionC_PhoneData() {
+  return (
+    <PhoneFrame label="C: Phone — Data Review">
+      <div style={{ padding: '12px 16px' }}>
+        <Title size={20}>Data Review</Title>
+      </div>
+      {/* Client selector */}
+      <div style={{ padding: '0 16px 8px' }}>
+        <Box style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontFamily: SK.font, fontSize: 16, fontWeight: 600 }}>Alex M.</span>
+          <span style={{ fontFamily: SK.font, fontSize: 13, color: SK.muted }}>▼</span>
+        </Box>
+      </div>
+      {/* Behavior chips */}
+      <div style={{ display: 'flex', gap: 6, padding: '0 16px 8px', flexWrap: 'wrap' }}>
+        {['All', '1-Step', 'Greetings', 'Aggression'].map((b, i) => (
+          <div key={i} style={{ padding: '4px 10px', borderRadius: 12, fontSize: 12, fontFamily: SK.font, background: i === 0 ? SK.accent : '#eee', color: i === 0 ? '#fff' : SK.text, fontWeight: 600 }}>{b}</div>
+        ))}
+      </div>
+      {/* Chart placeholder */}
+      <div style={{ padding: '0 16px' }}>
+        <Box style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', background: SK.accentLight }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontFamily: SK.font, fontSize: 14, color: SK.accent }}>Trend Chart</div>
+            <div style={{ fontFamily: SK.font, fontSize: 11, color: SK.muted }}>with phase lines + goal lines</div>
+          </div>
+        </Box>
+      </div>
+      {/* Session list */}
+      <div style={{ padding: '12px 16px 4px' }}>
+        <Title size={16}>Sessions</Title>
+      </div>
+      {['Apr 18 · 45min', 'Apr 16 · 30min', 'Apr 14 · 55min'].map((s, i) => (
+        <div key={i} style={{ padding: '10px 16px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontFamily: SK.font, fontSize: 15, fontWeight: 600 }}>{s}</div>
+            <div style={{ fontFamily: SK.font, fontSize: 12, color: SK.muted }}>1-Step: 70% · Aggression: 2</div>
+          </div>
+          <span style={{ color: SK.muted }}>▸</span>
+        </div>
+      ))}
+    </PhoneFrame>
+  );
+}
+
+// ══════════════════════════════════════════════
+// New feature screens (shared)
+// ══════════════════════════════════════════════
+
+function ReportsScreen() {
+  return (
+    <PhoneFrame label="Reports (new)">
+      <div style={{ padding: '12px 16px' }}>
+        <Title size={20}>Progress Reports</Title>
+      </div>
+      <div style={{ padding: '0 16px 8px' }}>
+        <Box style={{ padding: '8px 12px' }}>
+          <span style={{ fontFamily: SK.font, fontSize: 16 }}>Alex M. · Apr 1–18</span>
+        </Box>
+      </div>
+      {/* Goal cards */}
+      {[
+        { name: '1-Step Instructions', pct: 70, sto: 'STO 2: 75% accuracy', trend: '↑' },
+        { name: 'Greetings', pct: 55, sto: 'STO 1: 50% accuracy ★', trend: '↑' },
+        { name: 'Aggression', pct: 40, sto: 'Baseline: 5/session → 2', trend: '↓ good' },
+      ].map((g, i) => (
+        <div key={i} style={{ padding: '0 16px', marginBottom: 8 }}>
+          <Box style={{ padding: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontFamily: SK.font, fontSize: 15, fontWeight: 600 }}>{g.name}</span>
+              <span style={{ fontFamily: SK.font, fontSize: 13, color: SK.success }}>{g.trend}</span>
+            </div>
+            {/* Progress bar */}
+            <div style={{ height: 8, borderRadius: 4, background: '#eee', marginBottom: 4 }}>
+              <div style={{ height: 8, borderRadius: 4, background: SK.accent, width: `${g.pct}%` }} />
+            </div>
+            <Label style={{ fontSize: 12 }}>{g.sto}</Label>
+          </Box>
+        </div>
+      ))}
+      <div style={{ padding: '4px 16px', display: 'flex', gap: 6 }}>
+        <Btn variant="primary" small style={{ flex: 1 }}>Export PDF</Btn>
+        <Btn variant="outline" small style={{ flex: 1 }}>Export DOCX</Btn>
+      </div>
+      <Note style={{ padding: '4px 16px' }}>↑ Insurance-ready with charts + signatures</Note>
+    </PhoneFrame>
+  );
+}
+
+function ParentPortalScreen() {
+  return (
+    <PhoneFrame label="Parent Portal (new)">
+      <div style={{ padding: '12px 16px', background: SK.successLight }}>
+        <Title size={20}>Welcome, Parent</Title>
+        <Label>Alex M.'s progress</Label>
+      </div>
+      {/* Summary cards */}
+      <div style={{ padding: 12, display: 'flex', gap: 8 }}>
+        <Box style={{ flex: 1, padding: 10, textAlign: 'center' }}>
+          <div style={{ fontFamily: SK.fontClean, fontSize: 24, fontWeight: 700, color: SK.accent }}>70%</div>
+          <Label style={{ fontSize: 11 }}>1-Step</Label>
+        </Box>
+        <Box style={{ flex: 1, padding: 10, textAlign: 'center' }}>
+          <div style={{ fontFamily: SK.fontClean, fontSize: 24, fontWeight: 700, color: SK.accent }}>60%</div>
+          <Label style={{ fontSize: 11 }}>Greetings</Label>
+        </Box>
+        <Box style={{ flex: 1, padding: 10, textAlign: 'center' }}>
+          <div style={{ fontFamily: SK.fontClean, fontSize: 24, fontWeight: 700, color: SK.danger }}>2/day</div>
+          <Label style={{ fontSize: 11 }}>Aggression</Label>
+        </Box>
+      </div>
+      {/* Chart placeholder */}
+      <div style={{ padding: '0 12px' }}>
+        <Placeholder label="Progress chart (read-only)" h={100} />
+      </div>
+      {/* Collect data */}
+      <div style={{ padding: '12px 12px 4px' }}>
+        <Title size={16}>Collect Data at Home</Title>
+        <Note>Only assigned behaviors shown</Note>
+      </div>
+      <div style={{ padding: '0 12px' }}>
+        <Box style={{ padding: 12 }}>
+          <Label>1-Step Instructions (simplified)</Label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <Btn variant="success" style={{ flex: 1, padding: '16px 0' }}>✓ Did it!</Btn>
+            <Btn variant="danger" style={{ flex: 1, padding: '16px 0' }}>✗ Needed help</Btn>
+          </div>
+        </Box>
+      </div>
+    </PhoneFrame>
+  );
+}
+
+function ClientFormScreen() {
+  return (
+    <PhoneFrame label="Client Form (redesigned)">
+      <div style={{ padding: '12px 16px' }}>
+        <Title size={20}>Edit Client</Title>
+      </div>
+      <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Sections */}
+        {[
+          { label: 'Name', val: 'Alex M.' },
+          { label: 'DOB', val: '03/15/2018' },
+          { label: 'Location', val: 'Clinic' },
+        ].map((f, i) => (
+          <div key={i}>
+            <Label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>{f.label}</Label>
+            <Box style={{ padding: '8px 12px' }}>
+              <span style={{ fontFamily: SK.font, fontSize: 16 }}>{f.val}</span>
+            </Box>
+          </div>
+        ))}
+        {/* Behaviors section */}
+        <div style={{ borderTop: `1px solid #eee`, paddingTop: 10, marginTop: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Title size={16}>Behaviors</Title>
+            <Btn variant="primary" small>+ Add</Btn>
+          </div>
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 8, border: `1.5px solid ${SK.border}`, borderRadius: 6, overflow: 'hidden' }}>
+            <div style={{ flex: 1, textAlign: 'center', padding: '4px 0', fontFamily: SK.font, fontSize: 13, background: SK.accent, color: '#fff', fontWeight: 600 }}>Acq (3)</div>
+            <div style={{ flex: 1, textAlign: 'center', padding: '4px 0', fontFamily: SK.font, fontSize: 13, color: SK.text, fontWeight: 600 }}>Decel (2)</div>
+          </div>
+          {['1-Step Instructions · event', 'Greetings · event', 'Waiting · duration'].map((b, i) => (
+            <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontFamily: SK.font, fontSize: 14 }}>{b}</span>
+              <span style={{ fontFamily: SK.font, fontSize: 12, color: SK.muted }}>edit</span>
+            </div>
+          ))}
+        </div>
+        <Note>↑ Behaviors inline, not separate panel</Note>
+      </div>
+    </PhoneFrame>
+  );
+}
+
+// ══════════════════════════════════════════════
+// Main app — tab-based viewer
+// ══════════════════════════════════════════════
+
+function App() {
+  const [tab, setTab] = useState(0);
+  const tabs = [
+    'A: Grid Layout',
+    'B: Card Stack',
+    'C: Lanes',
+    'New Features',
+  ];
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#f5f3ef' }}>
+      {/* Header */}
+      <div style={{ padding: '16px 24px 0', flexShrink: 0 }}>
+        <div style={{ fontFamily: SK.font, fontSize: 28, fontWeight: 600, color: SK.text }}>ABA Data Collection — Wireframes</div>
+        <div style={{ fontFamily: SK.font, fontSize: 15, color: SK.muted, marginTop: 2 }}>3 layout directions + new feature screens</div>
+      </div>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 0, padding: '12px 24px 0', flexShrink: 0 }}>
+        {tabs.map((t, i) => (
+          <button key={i} onClick={() => setTab(i)} style={{
+            padding: '8px 16px', fontFamily: SK.font, fontSize: 16, fontWeight: 600,
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: tab === i ? SK.accent : SK.muted,
+            borderBottom: tab === i ? `2.5px solid ${SK.accent}` : '2.5px solid transparent',
+          }}>{t}</button>
+        ))}
+      </div>
+      <div style={{ height: 1, background: '#ddd', margin: '0 24px', flexShrink: 0 }} />
+      {/* Content */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+        {tab === 0 && (
+          <div>
+            <Note style={{ fontSize: 16, marginBottom: 16 }}>
+              Option A: Sidebar nav on tablet, bottom tabs on phone. All behaviors in a compact grid — see everything at once. SOAP notes, signatures, service codes accessible from a bottom toolbar.
+            </Note>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <OptionA_PhoneHome />
+              <OptionA_PhoneSession />
+              <OptionA_TabletSession />
+            </div>
+          </div>
+        )}
+        {tab === 1 && (
+          <div>
+            <Note style={{ fontSize: 16, marginBottom: 16 }}>
+              Option B: One behavior at a time — swipe between them. Maximum focus, minimum distraction. Big touch targets. Best for clinicians who work through behaviors sequentially.
+            </Note>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <OptionB_PhoneSession />
+              <OptionB_PhoneNotes />
+              <ClientFormScreen />
+            </div>
+          </div>
+        )}
+        {tab === 2 && (
+          <div>
+            <Note style={{ fontSize: 16, marginBottom: 16 }}>
+              Option C: Horizontal lanes — acquisition on top, deceleration below. Scroll horizontally within each lane. Dark header for session context. Quick-access toolbar for notes, signatures, codes.
+            </Note>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <OptionC_PhoneSession />
+              <OptionC_PhoneData />
+            </div>
+          </div>
+        )}
+        {tab === 3 && (
+          <div>
+            <Note style={{ fontSize: 16, marginBottom: 16 }}>
+              New feature screens that work with any layout direction. These cover the expansion plan: SOAP notes, progress reports with export, parent portal with simplified data collection.
+            </Note>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <OptionB_PhoneNotes />
+              <ReportsScreen />
+              <ParentPortalScreen />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{"showAnnotations": true}/*EDITMODE-END*/;
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

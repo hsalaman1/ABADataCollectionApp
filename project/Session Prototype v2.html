@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>ABA Session — Data Collection</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #root { height: 100%; width: 100%; }
+  body {
+    font-family: -apple-system, 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  input, textarea, button, select { font-family: inherit; font-size: 16px; }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes timerPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(13,148,136,0.3); }
+    50% { box-shadow: 0 0 0 6px rgba(13,148,136,0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .program-card { animation: fadeIn 0.25s ease-out both; }
+  .program-card:nth-child(2) { animation-delay: 0.04s; }
+  .program-card:nth-child(3) { animation-delay: 0.08s; }
+  .program-card:nth-child(4) { animation-delay: 0.12s; }
+  .program-card:nth-child(5) { animation-delay: 0.16s; }
+  .program-card:nth-child(6) { animation-delay: 0.20s; }
+  button { transition: transform 0.1s; }
+  button:active { transform: scale(0.96); }
+
+  /* Responsive grid */
+  .program-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  @media (min-width: 540px) {
+    .program-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 900px) {
+    .program-grid { grid-template-columns: 1fr 1fr 1fr; }
+  }
+
+  /* Section labels */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0 2px 6px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="components/session-header.jsx"></script>
+<script type="text/babel" src="components/program-cards.jsx"></script>
+<script type="text/babel" src="components/session-actions.jsx"></script>
+<script type="text/babel">
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Sample client data (Alex M. — home-based ABA) ──
+const SAMPLE_CLIENT = {
+  name: 'Alex M.',
+  programs: [
+    { id: '1', name: '1-Step Directions', category: 'acquisition', dataType: 'event' },
+    { id: '2', name: 'Receptive ID — Colors', category: 'acquisition', dataType: 'event' },
+    { id: '3', name: 'Manding with PECS', category: 'acquisition', dataType: 'event' },
+    { id: '4', name: 'Waiting Tolerance', category: 'acquisition', dataType: 'duration' },
+    { id: '5', name: 'Physical Aggression', category: 'deceleration', dataType: 'frequency' },
+    { id: '6', name: 'Self-Injurious Behavior', category: 'deceleration', dataType: 'frequency' },
+  ],
+};
+
+// ── Independent timer hook ──
+function useIndependentTimer() {
+  const [isRunning, setIsRunning] = useState(false);
+  const [currentMs, setCurrentMs] = useState(0);
+  const [totalMs, setTotalMs] = useState(0);
+  const [instances, setInstances] = useState(0);
+  const startRef = useRef(null);
+  const intervalRef = useRef(null);
+
+  const toggle = useCallback(() => {
+    if (isRunning) {
+      clearInterval(intervalRef.current);
+      const elapsed = Date.now() - startRef.current;
+      setTotalMs(prev => prev + elapsed);
+      setInstances(prev => prev + 1);
+      setCurrentMs(0);
+      setIsRunning(false);
+    } else {
+      startRef.current = Date.now();
+      setIsRunning(true);
+      intervalRef.current = setInterval(() => {
+        setCurrentMs(Date.now() - startRef.current);
+      }, 100);
+    }
+  }, [isRunning]);
+
+  useEffect(() => () => clearInterval(intervalRef.current), []);
+  return { isRunning, currentMs, totalMs, instances, toggle };
+}
+
+// ══════════════════════════════════════════════
+// Main Session App — Option A Grid Layout
+// ══════════════════════════════════════════════
+
+function SessionApp() {
+  const client = SAMPLE_CLIENT;
+
+  // Session timer
+  const [sessionStart] = useState(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const pauseOffsetRef = useRef(0);
+  const pauseStartRef = useRef(null);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!isPaused) {
+        setElapsed(Date.now() - sessionStart - pauseOffsetRef.current);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [sessionStart, isPaused]);
+
+  const handlePause = () => { setIsPaused(true); pauseStartRef.current = Date.now(); };
+  const handleResume = () => {
+    if (pauseStartRef.current) pauseOffsetRef.current += Date.now() - pauseStartRef.current;
+    setIsPaused(false);
+  };
+
+  // Per-program state
+  const [programStates, setProgramStates] = useState(() => {
+    const s = {};
+    client.programs.forEach(p => {
+      if (p.dataType === 'event') s[p.id] = { trialsCorrect: 0, trialsTotal: 0, selectedPrompt: 'independent', trials: [] };
+      else if (p.dataType === 'frequency') s[p.id] = { count: 0 };
+      else s[p.id] = {};
+    });
+    return s;
+  });
+
+  // Independent timers
+  const timerRefs = {};
+  client.programs.filter(p => p.category === 'deceleration' || p.dataType === 'duration').forEach(p => {
+    timerRefs[p.id] = useIndependentTimer();
+  });
+
+  // Sheets
+  const [showNotes, setShowNotes] = useState(false);
+  const [showABC, setShowABC] = useState(false);
+  const [notes, setNotes] = useState({});
+  const [abcRecords, setABCRecords] = useState([]);
+
+  // Filter
+  const [filter, setFilter] = useState('all');
+
+  const updateProgram = (id, updates) => {
+    setProgramStates(prev => ({ ...prev, [id]: { ...prev[id], ...updates } }));
+  };
+
+  const acqPrograms = client.programs.filter(p => p.category === 'acquisition');
+  const decelPrograms = client.programs.filter(p => p.category === 'deceleration');
+
+  const showAcq = filter === 'all' || filter === 'acquisition';
+  const showDecel = filter === 'all' || filter === 'deceleration';
+
+  const renderCard = (program) => {
+    const state = programStates[program.id];
+    if (program.dataType === 'event') {
+      return (
+        <EventRecordingCard
+          program={program} state={state}
+          onCorrect={() => updateProgram(program.id, {
+            trialsCorrect: state.trialsCorrect + 1, trialsTotal: state.trialsTotal + 1,
+            trials: [...state.trials, { correct: true, prompt: state.selectedPrompt, ts: Date.now() }],
+          })}
+          onIncorrect={() => updateProgram(program.id, {
+            trialsTotal: state.trialsTotal + 1,
+            trials: [...state.trials, { correct: false, prompt: state.selectedPrompt, ts: Date.now() }],
+          })}
+          onPromptChange={(p) => updateProgram(program.id, { selectedPrompt: p })}
+          onUndo={() => {
+            if (state.trials.length === 0) return;
+            const last = state.trials[state.trials.length - 1];
+            updateProgram(program.id, {
+              trialsCorrect: state.trialsCorrect - (last.correct ? 1 : 0),
+              trialsTotal: state.trialsTotal - 1, trials: state.trials.slice(0, -1),
+            });
+          }}
+        />
+      );
+    }
+    if (program.dataType === 'duration') {
+      return <DurationCard program={program} timerState={timerRefs[program.id]} onTimerToggle={timerRefs[program.id].toggle} />;
+    }
+    if (program.dataType === 'frequency') {
+      return (
+        <TallyCard program={program} count={state.count}
+          onTap={() => updateProgram(program.id, { count: state.count + 1 })}
+          onDecrement={() => updateProgram(program.id, { count: Math.max(0, state.count - 1) })}
+          timerState={timerRefs[program.id]} onTimerToggle={timerRefs[program.id]?.toggle}
+        />
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div style={{ minHeight: '100%', paddingBottom: 72 }}>
+      <SessionHeader
+        clientName={client.name} elapsed={elapsed} isPaused={isPaused}
+        onPause={handlePause} onResume={handleResume}
+        onEnd={() => alert('Session ended! Data would be saved.')}
+      />
+
+      {/* Filter pills */}
+      <div style={{
+        padding: '10px 16px', display: 'flex', gap: 6, alignItems: 'center',
+        position: 'sticky', top: 52, zIndex: 50, background: '#f1f5f9',
+        borderBottom: '1px solid #e2e8f0',
+      }}>
+        {[
+          { key: 'all', label: `All (${client.programs.length})` },
+          { key: 'acquisition', label: `Acq (${acqPrograms.length})` },
+          { key: 'deceleration', label: `Decel (${decelPrograms.length})` },
+        ].map(f => (
+          <button key={f.key} onClick={() => setFilter(f.key)} style={{
+            padding: '6px 14px', borderRadius: 16, fontSize: 12, fontWeight: 600,
+            border: filter === f.key ? '1.5px solid #0d9488' : '1.5px solid #e2e8f0',
+            background: filter === f.key ? '#f0fdfa' : '#fff',
+            color: filter === f.key ? '#0d9488' : '#64748b',
+            cursor: 'pointer',
+          }}>{f.label}</button>
+        ))}
+        {/* Summary stats */}
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>
+          {Object.values(programStates).reduce((sum, s) => sum + (s.trialsTotal || 0) + (s.count || 0), 0)} data points
+        </div>
+      </div>
+
+      {/* Program cards in grid */}
+      <div style={{ padding: '12px 16px', maxWidth: 1060, margin: '0 auto' }}>
+        {/* Acquisition section */}
+        {showAcq && acqPrograms.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div className="section-label" style={{ color: '#0d9488' }}>
+              Acquisition Programs
+            </div>
+            <div className="program-grid">
+              {acqPrograms.map(p => (
+                <div key={p.id} className="program-card">{renderCard(p)}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Deceleration section */}
+        {showDecel && decelPrograms.length > 0 && (
+          <div>
+            <div className="section-label" style={{ color: '#dc2626' }}>
+              Deceleration Targets
+            </div>
+            <div className="program-grid">
+              {decelPrograms.map(p => (
+                <div key={p.id} className="program-card">{renderCard(p)}</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom action bar */}
+      <SessionActionBar
+        onNotes={() => setShowNotes(true)}
+        onABC={() => setShowABC(true)}
+        onExport={(fmt) => alert(`Export as ${fmt.toUpperCase()}`)}
+        notesCount={Object.values(notes).filter(Boolean).length}
+        abcCount={abcRecords.length}
+      />
+
+      <NotesSheet isOpen={showNotes} onClose={() => setShowNotes(false)} notes={notes} onNotesChange={setNotes} />
+      <ABCSheet isOpen={showABC} onClose={() => setShowABC(false)} records={abcRecords}
+        onAddRecord={(r) => setABCRecords(prev => [...prev, r])} />
+    </div>
+  );
+}
+
+// ── Tweaks ──
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{"accentColor": "#0d9488", "layout": "grid"}/*EDITMODE-END*/;
+
+window.addEventListener('message', (e) => {
+  if (e.data?.type === '__activate_edit_mode') {
+    document.getElementById('tweaks-panel')?.style && (document.getElementById('tweaks-panel').style.display = 'block');
+  }
+  if (e.data?.type === '__deactivate_edit_mode') {
+    document.getElementById('tweaks-panel')?.style && (document.getElementById('tweaks-panel').style.display = 'none');
+  }
+});
+window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+
+ReactDOM.createRoot(document.getElementById('root')).render(<SessionApp />);
+</script>
+</body>
+</html>

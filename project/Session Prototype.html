@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>ABA Session — Data Collection</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #root { height: 100%; width: 100%; }
+  body {
+    font-family: -apple-system, 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  input, textarea, button, select { font-family: inherit; font-size: 16px; }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes timerPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.3); }
+    50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .program-card { animation: fadeIn 0.3s ease-out both; }
+  .program-card:nth-child(2) { animation-delay: 0.05s; }
+  .program-card:nth-child(3) { animation-delay: 0.1s; }
+  .program-card:nth-child(4) { animation-delay: 0.15s; }
+  .program-card:nth-child(5) { animation-delay: 0.2s; }
+  button:active { transform: scale(0.97); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="components/session-header.jsx"></script>
+<script type="text/babel" src="components/program-cards.jsx"></script>
+<script type="text/babel" src="components/session-actions.jsx"></script>
+<script type="text/babel">
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Sample client data (Alex M. — home-based ABA) ──
+const SAMPLE_CLIENT = {
+  name: 'Alex M.',
+  programs: [
+    { id: '1', name: 'Follow 1-Step Directions', category: 'acquisition', dataType: 'event', definition: 'Client follows a 1-step instruction within 5 seconds without additional prompting.' },
+    { id: '2', name: 'Receptive ID — Colors', category: 'acquisition', dataType: 'event', definition: 'Client touches/points to the correct color when presented with an array of 3.' },
+    { id: '3', name: 'Manding with PECS', category: 'acquisition', dataType: 'event', definition: 'Client independently exchanges PECS card for desired item.' },
+    { id: '4', name: 'Waiting Tolerance', category: 'acquisition', dataType: 'duration', definition: 'Duration client waits appropriately without problem behavior.' },
+    { id: '5', name: 'Physical Aggression', category: 'deceleration', dataType: 'frequency', definition: 'Hitting, kicking, biting, scratching directed at another person.' },
+    { id: '6', name: 'Self-Injurious Behavior', category: 'deceleration', dataType: 'frequency', definition: 'Head banging, hand biting, skin picking directed at self.' },
+  ],
+};
+
+// ── Timer hook (inspired by Repo 2's useTimer) ──
+function useIndependentTimer() {
+  const [isRunning, setIsRunning] = useState(false);
+  const [currentMs, setCurrentMs] = useState(0);
+  const [totalMs, setTotalMs] = useState(0);
+  const [instances, setInstances] = useState(0);
+  const startRef = useRef(null);
+  const intervalRef = useRef(null);
+
+  const toggle = useCallback(() => {
+    if (isRunning) {
+      clearInterval(intervalRef.current);
+      const elapsed = Date.now() - startRef.current;
+      setTotalMs(prev => prev + elapsed);
+      setInstances(prev => prev + 1);
+      setCurrentMs(0);
+      setIsRunning(false);
+    } else {
+      startRef.current = Date.now();
+      setIsRunning(true);
+      intervalRef.current = setInterval(() => {
+        setCurrentMs(Date.now() - startRef.current);
+      }, 100);
+    }
+  }, [isRunning]);
+
+  useEffect(() => () => clearInterval(intervalRef.current), []);
+
+  return { isRunning, currentMs, totalMs, instances, toggle };
+}
+
+// ── Duration program card ──
+function DurationCard({ program, timerState, onTimerToggle }) {
+  const formatDur = (ms) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  };
+  const liveMs = timerState.currentMs + timerState.totalMs;
+
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 12, border: '1.5px solid #e2e8f0',
+      padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#1e293b' }}>{program.name}</div>
+          <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500, marginTop: 1 }}>Duration</div>
+        </div>
+      </div>
+      <div style={{
+        textAlign: 'center', padding: '12px 0',
+        fontFamily: "'SF Mono', 'Menlo', monospace",
+        fontSize: 36, fontWeight: 700,
+        color: timerState.isRunning ? '#0d9488' : '#1e293b',
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {formatDur(timerState.isRunning ? timerState.totalMs + timerState.currentMs : timerState.totalMs)}
+      </div>
+      <button
+        onClick={onTimerToggle}
+        style={{
+          padding: '14px 0', borderRadius: 10, border: 'none',
+          background: timerState.isRunning ? '#ef4444' : '#0d9488',
+          color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', minHeight: 52,
+        }}
+      >
+        {timerState.isRunning ? '■  Stop Timer' : '▶  Start Timer'}
+      </button>
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>Episodes: {timerState.instances}</span>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>Total: {formatDur(timerState.totalMs)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════
+// Main Session App
+// ══════════════════════════════════════════════
+
+function SessionApp() {
+  const client = SAMPLE_CLIENT;
+
+  // Session timer
+  const [sessionStart] = useState(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const pauseOffsetRef = useRef(0);
+  const pauseStartRef = useRef(null);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!isPaused) {
+        setElapsed(Date.now() - sessionStart - pauseOffsetRef.current);
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [sessionStart, isPaused]);
+
+  const handlePause = () => {
+    setIsPaused(true);
+    pauseStartRef.current = Date.now();
+  };
+  const handleResume = () => {
+    if (pauseStartRef.current) {
+      pauseOffsetRef.current += Date.now() - pauseStartRef.current;
+    }
+    setIsPaused(false);
+  };
+
+  // Per-program state
+  const [programStates, setProgramStates] = useState(() => {
+    const states = {};
+    client.programs.forEach(p => {
+      if (p.dataType === 'event') {
+        states[p.id] = { trialsCorrect: 0, trialsTotal: 0, selectedPrompt: 'independent', trials: [] };
+      } else if (p.dataType === 'frequency') {
+        states[p.id] = { count: 0 };
+      } else if (p.dataType === 'duration') {
+        states[p.id] = {};
+      }
+    });
+    return states;
+  });
+
+  // Independent timers for deceleration behaviors
+  const timerRefs = {};
+  client.programs.filter(p => p.category === 'deceleration').forEach(p => {
+    timerRefs[p.id] = useIndependentTimer();
+  });
+  // Duration program timers
+  client.programs.filter(p => p.dataType === 'duration').forEach(p => {
+    timerRefs[p.id] = useIndependentTimer();
+  });
+
+  // Sheets
+  const [showNotes, setShowNotes] = useState(false);
+  const [showABC, setShowABC] = useState(false);
+  const [notes, setNotes] = useState({});
+  const [abcRecords, setABCRecords] = useState([]);
+
+  // Category filter
+  const [filter, setFilter] = useState('all');
+
+  const updateProgram = (id, updates) => {
+    setProgramStates(prev => ({ ...prev, [id]: { ...prev[id], ...updates } }));
+  };
+
+  const acqPrograms = client.programs.filter(p => p.category === 'acquisition');
+  const decelPrograms = client.programs.filter(p => p.category === 'deceleration');
+  const filtered = filter === 'all' ? client.programs
+    : filter === 'acquisition' ? acqPrograms : decelPrograms;
+
+  return (
+    <div style={{ minHeight: '100%', paddingBottom: 80 }}>
+      <SessionHeader
+        clientName={client.name}
+        elapsed={elapsed}
+        isPaused={isPaused}
+        onPause={handlePause}
+        onResume={handleResume}
+        onEnd={() => alert('Session ended! Data would be saved.')}
+      />
+
+      {/* Filter pills */}
+      <div style={{
+        padding: '12px 20px', display: 'flex', gap: 6,
+        position: 'sticky', top: 72, zIndex: 50, background: '#f1f5f9',
+      }}>
+        {[
+          { key: 'all', label: `All (${client.programs.length})` },
+          { key: 'acquisition', label: `Acquisition (${acqPrograms.length})` },
+          { key: 'deceleration', label: `Deceleration (${decelPrograms.length})` },
+        ].map(f => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            style={{
+              padding: '8px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+              border: filter === f.key ? '1.5px solid #0d9488' : '1.5px solid #e2e8f0',
+              background: filter === f.key ? '#f0fdfa' : '#fff',
+              color: filter === f.key ? '#0d9488' : '#64748b',
+              cursor: 'pointer',
+            }}
+          >{f.label}</button>
+        ))}
+      </div>
+
+      {/* Program cards */}
+      <div style={{ padding: '4px 20px 20px', maxWidth: 960, margin: '0 auto' }}>
+        {/* Two-column grid on wider screens */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(340, 1fr))',
+          gap: 12,
+        }}>
+          {filtered.map((program, idx) => {
+            const state = programStates[program.id];
+
+            if (program.dataType === 'event') {
+              return (
+                <div key={program.id} className="program-card">
+                  <EventRecordingCard
+                    program={program}
+                    state={state}
+                    onCorrect={() => {
+                      updateProgram(program.id, {
+                        trialsCorrect: state.trialsCorrect + 1,
+                        trialsTotal: state.trialsTotal + 1,
+                        trials: [...state.trials, { correct: true, prompt: state.selectedPrompt, ts: Date.now() }],
+                      });
+                    }}
+                    onIncorrect={() => {
+                      updateProgram(program.id, {
+                        trialsTotal: state.trialsTotal + 1,
+                        trials: [...state.trials, { correct: false, prompt: state.selectedPrompt, ts: Date.now() }],
+                      });
+                    }}
+                    onPromptChange={(p) => updateProgram(program.id, { selectedPrompt: p })}
+                    onUndo={() => {
+                      if (state.trials.length === 0) return;
+                      const last = state.trials[state.trials.length - 1];
+                      updateProgram(program.id, {
+                        trialsCorrect: state.trialsCorrect - (last.correct ? 1 : 0),
+                        trialsTotal: state.trialsTotal - 1,
+                        trials: state.trials.slice(0, -1),
+                      });
+                    }}
+                  />
+                </div>
+              );
+            }
+
+            if (program.dataType === 'duration') {
+              return (
+                <div key={program.id} className="program-card">
+                  <DurationCard
+                    program={program}
+                    timerState={timerRefs[program.id]}
+                    onTimerToggle={timerRefs[program.id].toggle}
+                  />
+                </div>
+              );
+            }
+
+            if (program.dataType === 'frequency') {
+              return (
+                <div key={program.id} className="program-card">
+                  <TallyCard
+                    program={program}
+                    count={state.count}
+                    onTap={() => updateProgram(program.id, { count: state.count + 1 })}
+                    onDecrement={() => updateProgram(program.id, { count: Math.max(0, state.count - 1) })}
+                    timerState={timerRefs[program.id]}
+                    onTimerToggle={timerRefs[program.id]?.toggle}
+                  />
+                </div>
+              );
+            }
+
+            return null;
+          })}
+        </div>
+      </div>
+
+      {/* Bottom action bar */}
+      <SessionActionBar
+        onNotes={() => setShowNotes(true)}
+        onABC={() => setShowABC(true)}
+        onExport={(fmt) => alert(`Export as ${fmt.toUpperCase()} — would generate file`)}
+        notesCount={Object.values(notes).filter(Boolean).length}
+        abcCount={abcRecords.length}
+      />
+
+      {/* Sheets */}
+      <NotesSheet
+        isOpen={showNotes}
+        onClose={() => setShowNotes(false)}
+        notes={notes}
+        onNotesChange={setNotes}
+      />
+      <ABCSheet
+        isOpen={showABC}
+        onClose={() => setShowABC(false)}
+        records={abcRecords}
+        onAddRecord={(r) => setABCRecords(prev => [...prev, r])}
+      />
+    </div>
+  );
+}
+
+// ── Tweaks ──
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{"accentColor": "#0d9488", "cardStyle": "bordered"}/*EDITMODE-END*/;
+
+window.addEventListener('message', (e) => {
+  if (e.data?.type === '__activate_edit_mode') {
+    document.getElementById('tweaks-panel').style.display = 'block';
+  }
+  if (e.data?.type === '__deactivate_edit_mode') {
+    document.getElementById('tweaks-panel').style.display = 'none';
+  }
+});
+window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+
+ReactDOM.createRoot(document.getElementById('root')).render(<SessionApp />);
+</script>
+</body>
+</html>

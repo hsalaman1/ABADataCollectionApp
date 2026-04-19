@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>ABA Data Collection App</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #root { height: 100%; width: 100%; }
+  body {
+    font-family: -apple-system, 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif;
+    background: #f1f5f9; color: #1e293b;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  input, textarea, button, select { font-family: inherit; font-size: 16px; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes timerPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(13,148,136,0.3); } 50% { box-shadow: 0 0 0 6px rgba(13,148,136,0); } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .program-card { animation: fadeIn 0.25s ease-out both; }
+  .program-card:nth-child(2) { animation-delay: 0.04s; }
+  .program-card:nth-child(3) { animation-delay: 0.08s; }
+  .program-card:nth-child(4) { animation-delay: 0.12s; }
+  .program-card:nth-child(5) { animation-delay: 0.16s; }
+  .program-card:nth-child(6) { animation-delay: 0.20s; }
+  button { transition: transform 0.1s; }
+  button:active { transform: scale(0.96); }
+  .program-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  @media (min-width: 540px) { .program-grid { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 900px) { .program-grid { grid-template-columns: 1fr 1fr 1fr; } }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 2px 6px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="components/ui-shell.jsx"></script>
+<script type="text/babel" src="components/session-header.jsx"></script>
+<script type="text/babel" src="components/program-cards.jsx"></script>
+<script type="text/babel" src="components/session-actions.jsx"></script>
+<script type="text/babel" src="components/clients-pages.jsx"></script>
+<script type="text/babel" src="components/data-reports-pages.jsx"></script>
+<script type="text/babel" src="components/app-data.jsx"></script>
+<script type="text/babel">
+
+function App() {
+  const [tab, setTab] = React.useState('clients');
+  const [clients, setClients] = React.useState(INITIAL_CLIENTS);
+  const [sessions, setSessions] = React.useState(INITIAL_SESSIONS);
+
+  // Session detail state
+  const [viewingSession, setViewingSession] = React.useState(null);
+
+  // Client admin state
+  const [editingClientId, setEditingClientId] = React.useState(null);
+  const [creatingClient, setCreatingClient] = React.useState(false);
+
+  // Session state
+  const [sessionClientId, setSessionClientId] = React.useState(null);
+  const [inSession, setInSession] = React.useState(false);
+
+  const editingClient = editingClientId ? clients.find(c => c.id === editingClientId) : null;
+  const sessionClient = sessionClientId ? clients.find(c => c.id === sessionClientId) : null;
+
+  // ── Clients tab ──
+  const renderClientsTab = () => {
+    if (creatingClient || editingClient) {
+      return (
+        <ClientAdminPage
+          client={editingClient}
+          onSave={(data) => {
+            if (editingClient) {
+              setClients(prev => prev.map(c => c.id === editingClient.id ? { ...c, ...data } : c));
+            } else {
+              const newClient = { ...data, id: 'c' + Date.now(), sessions: 0 };
+              setClients(prev => [...prev, newClient]);
+            }
+            setEditingClientId(null);
+            setCreatingClient(false);
+          }}
+          onBack={() => { setEditingClientId(null); setCreatingClient(false); }}
+          onDelete={() => {
+            setClients(prev => prev.filter(c => c.id !== editingClientId));
+            setEditingClientId(null);
+          }}
+        />
+      );
+    }
+    return (
+      <ClientsListPage
+        clients={clients}
+        onSelectClient={(id) => setEditingClientId(id)}
+        onNewClient={() => setCreatingClient(true)}
+      />
+    );
+  };
+
+  // ── Session tab ──
+  const renderSessionTab = () => {
+    if (inSession && sessionClient) {
+      return (
+        <SessionScreen
+          client={sessionClient}
+          onEnd={() => { setInSession(false); setSessionClientId(null); }}
+        />
+      );
+    }
+    // Select client for session
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <PageHeader title="Start Session" subtitle="Select a client to begin data collection" />
+        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          {clients.length === 0 && (
+            <EmptyState
+              title="No clients yet"
+              subtitle="Add a client first from the Clients tab."
+            />
+          )}
+          {clients.map(client => (
+            <button key={client.id} onClick={() => { setSessionClientId(client.id); setInSession(true); }}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', padding: '16px', background: '#fff', border: '1px solid #e2e8f0',
+                borderRadius: 10, cursor: 'pointer', textAlign: 'left', marginBottom: 8,
+              }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{client.name}</div>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
+                  {client.programs.filter(p => p.isActive !== false).length} active programs · {client.location || 'Home'}
+                </div>
+              </div>
+              <PrimaryBtn small>Start →</PrimaryBtn>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ── If in active session, skip the shell nav ──
+  if (inSession && sessionClient) {
+    return renderSessionTab();
+  }
+
+  return (
+    <AppShell activeTab={tab} onTabChange={setTab}>
+      {tab === 'clients' && renderClientsTab()}
+      {tab === 'session' && renderSessionTab()}
+      {tab === 'data' && (
+        viewingSession ? (
+          <SessionDetailPage
+            session={viewingSession}
+            client={clients.find(c => c.id === viewingSession.clientId)}
+            onBack={() => setViewingSession(null)}
+            onSave={(updated) => {
+              setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+              setViewingSession(updated);
+            }}
+          />
+        ) : (
+          <DataReviewPage clients={clients} sessions={sessions}
+            onViewSession={(s) => setViewingSession(s)} />
+        )
+      )}
+      {tab === 'reports' && (
+        <ReportsPage clients={clients} sessions={sessions} />
+      )}
+    </AppShell>
+  );
+}
+
+// ── Tweaks ──
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{"theme":"light"}/*EDITMODE-END*/;
+
+window.addEventListener('message', (e) => {
+  if (e.data?.type === '__activate_edit_mode') {}
+  if (e.data?.type === '__deactivate_edit_mode') {}
+});
+window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
