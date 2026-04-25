@@ -71,7 +71,7 @@ export default function SessionPage() {
   useEffect(() => {
     if (clientId) {
       db.clients.get(clientId).then(c => {
-        if (c) {
+        if (c && !c._deleted) {
           setClient(c)
           // Filter only active behaviors
           const activeBehaviors = c.targetBehaviors.filter(b => b.isActive !== false)
@@ -395,7 +395,7 @@ export default function SessionPage() {
 
     // Check mastery auto-advance for all behaviors with STOs
     if (client) {
-      const allSessions = await db.sessions.where('clientId').equals(client.id).toArray()
+      const allSessions = await db.sessions.where('clientId').equals(client.id).filter(s => !s._deleted).toArray()
       const updatedBehaviors = [...client.targetBehaviors]
       let anyAdvanced = false
 

@@ -20,17 +20,21 @@ export default function DataPage() {
   const navigate = useNavigate()
   const { clientId } = useParams()
 
-  const clients = useLiveQuery(() => db.clients.orderBy('name').toArray())
+  const clients = useLiveQuery(() => db.clients.orderBy('name').filter(c => !c._deleted).toArray())
   const [selectedClientId, setSelectedClientId] = useState<string | null>(clientId || null)
 
   const selectedClient = useLiveQuery(
-    () => selectedClientId ? db.clients.get(selectedClientId) : undefined,
+    async () => {
+      if (!selectedClientId) return undefined
+      const c = await db.clients.get(selectedClientId)
+      return c && !c._deleted ? c : undefined
+    },
     [selectedClientId]
   )
 
   const sessions = useLiveQuery(
     () => selectedClientId
-      ? db.sessions.where('clientId').equals(selectedClientId).reverse().sortBy('startTime')
+      ? db.sessions.where('clientId').equals(selectedClientId).filter(s => !s._deleted).reverse().sortBy('startTime')
       : [],
     [selectedClientId]
   )
