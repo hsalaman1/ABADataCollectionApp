@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type BehaviorData, PROMPT_LABELS, type TaskAnalysisTrial } from '../db/database'
+import { softDelete } from '../services/sync'
 import { formatDuration, formatDateTime } from '../utils/time'
 import { exportSessionToCSV, exportSessionToPDF, exportNotesToText } from '../utils/export'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -12,12 +13,20 @@ export default function SessionDetailPage() {
   const { clientId, sessionId } = useParams()
 
   const session = useLiveQuery(
-    () => sessionId ? db.sessions.get(sessionId) : undefined,
+    async () => {
+      if (!sessionId) return undefined
+      const s = await db.sessions.get(sessionId)
+      return s && !s._deleted ? s : undefined
+    },
     [sessionId]
   )
 
   const client = useLiveQuery(
-    () => clientId ? db.clients.get(clientId) : undefined,
+    async () => {
+      if (!clientId) return undefined
+      const c = await db.clients.get(clientId)
+      return c && !c._deleted ? c : undefined
+    },
     [clientId]
   )
 
@@ -26,7 +35,7 @@ export default function SessionDetailPage() {
 
   const handleDelete = async () => {
     if (sessionId) {
-      await db.sessions.delete(sessionId)
+      await softDelete('sessions', sessionId)
       navigate(`/data/${clientId}`)
     }
   }

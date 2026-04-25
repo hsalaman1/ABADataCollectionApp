@@ -6,8 +6,12 @@ import DataPage from './pages/DataPage'
 import ClientFormPage from './pages/ClientFormPage'
 import SelectClientPage from './pages/SelectClientPage'
 import SessionDetailPage from './pages/SessionDetailPage'
+import SyncPage from './pages/SyncPage'
 import { useTheme } from './hooks/useTheme'
 import { useToast } from './components/Toast'
+import { useAuth } from './hooks/useAuth'
+import { useSyncStatus } from './hooks/useSyncStatus'
+import { startSync } from './services/sync'
 import { isBackupDue } from './utils/backup'
 
 function App() {
@@ -15,6 +19,12 @@ function App() {
   const hideNav = location.pathname.includes('/session/') && !location.pathname.includes('/session/select')
   const { theme, toggle } = useTheme()
   const toast = useToast()
+  const { user, configured } = useAuth()
+  const sync = useSyncStatus()
+
+  useEffect(() => {
+    if (user) void startSync(user.id)
+  }, [user])
 
   useEffect(() => {
     if (!isBackupDue()) return
@@ -38,6 +48,7 @@ function App() {
           <Route path="/data" element={<DataPage />} />
           <Route path="/data/:clientId" element={<DataPage />} />
           <Route path="/data/:clientId/session/:sessionId" element={<SessionDetailPage />} />
+          <Route path="/sync" element={<SyncPage />} />
         </Routes>
       </main>
 
@@ -67,6 +78,51 @@ function App() {
             </svg>
             Data
           </NavLink>
+          {configured && (
+            <NavLink to="/sync" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                {user && sync.pending > 0 && (
+                  <span
+                    aria-label={`${sync.pending} pending`}
+                    style={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -8,
+                      background: 'var(--danger)',
+                      color: 'white',
+                      borderRadius: 10,
+                      fontSize: 10,
+                      lineHeight: 1,
+                      padding: '2px 5px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {sync.pending}
+                  </span>
+                )}
+                {user && sync.pending === 0 && !sync.error && (
+                  <span
+                    aria-label="synced"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      right: -4,
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      background: sync.online ? 'var(--success)' : 'var(--text-secondary)',
+                    }}
+                  />
+                )}
+              </span>
+              Sync
+            </NavLink>
+          )}
           <button
             onClick={toggle}
             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}

@@ -58,7 +58,7 @@ export default function ClientFormPage() {
   useEffect(() => {
     if (id) {
       db.clients.get(id).then(client => {
-        if (client) {
+        if (client && !client._deleted) {
           setName(client.name)
           setDateOfBirth(client.dateOfBirth || '')
           setPhone(client.phone || '')

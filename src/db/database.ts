@@ -111,7 +111,16 @@ export interface TargetBehavior {
   currentStoId?: string;
 }
 
-export interface Client {
+// Sync metadata applied to every cloud-synced row.
+// Pages don't need to set these — Dexie hooks (see bottom of file) do.
+export interface SyncMeta {
+  ownerId?: string;        // Supabase auth.uid() of the owner; null until first sync
+  _dirty?: number;         // 1 = needs upload, 0 = synced
+  _deleted?: number;       // 1 = tombstone (soft delete), 0 = present
+  _syncedAt?: string;      // ISO timestamp of last successful upload
+}
+
+export interface Client extends SyncMeta {
   id: string;
   name: string;
   dateOfBirth?: string;
@@ -150,7 +159,7 @@ export interface BehaviorData {
   abcRecords?: ABCRecord[];
 }
 
-export interface Session {
+export interface Session extends SyncMeta {
   id: string;
   clientId: string;
   clientName: string;
@@ -196,6 +205,77 @@ db.version(3).stores({
   behaviorDefinitions: 'id, clientId, behaviorName, behaviorType, createdAt',
   parentTrainingPrograms: 'id, clientId, programId, status, createdAt'
 });
+
+// Version 4: Sync metadata for Supabase cloud sync.
+// _dirty=1 marks rows that still need to be pushed; ownerId scopes per user.
+// Existing rows are marked dirty so they upload on first sign-in.
+const SYNCED_TABLE_NAMES = [
+  'clients',
+  'sessions',
+  'treatmentPlans',
+  'treatmentGoals',
+  'behaviorDefinitions',
+  'parentTrainingPrograms',
+] as const;
+
+db.version(4).stores({
+  clients: 'id, name, createdAt, updatedAt, ownerId, _dirty, _deleted',
+  sessions: 'id, clientId, startTime, createdAt, updatedAt, ownerId, _dirty, _deleted',
+  treatmentPlans: 'id, clientId, status, createdAt, updatedAt, ownerId, _dirty, _deleted',
+  treatmentGoals: 'id, clientId, goalId, category, status, createdAt, updatedAt, ownerId, _dirty, _deleted',
+  behaviorDefinitions: 'id, clientId, behaviorName, behaviorType, createdAt, updatedAt, ownerId, _dirty, _deleted',
+  parentTrainingPrograms: 'id, clientId, programId, status, createdAt, updatedAt, ownerId, _dirty, _deleted',
+}).upgrade(async tx => {
+  for (const name of SYNCED_TABLE_NAMES) {
+    await tx.table(name).toCollection().modify((row: Record<string, unknown>) => {
+      row._dirty = 1;
+      row._deleted = 0;
+      if (!row.updatedAt) row.updatedAt = row.createdAt ?? new Date().toISOString();
+    });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Sync hooks
+// ----------------------------------------------------------------------------
+// Every create/update on a synced table is automatically tagged with _dirty=1
+// so the sync service knows to push it. The sync service itself sets
+// `suspendSyncHooks(true)` while clearing dirty flags so it doesn't loop.
+
+let syncHooksSuspended = false;
+let currentOwnerId: string | null = null;
+
+export function suspendSyncHooks(suspend: boolean) {
+  syncHooksSuspended = suspend;
+}
+
+export function setCurrentOwnerId(ownerId: string | null) {
+  currentOwnerId = ownerId;
+}
+
+export function getCurrentOwnerId(): string | null {
+  return currentOwnerId;
+}
+
+export const SYNCED_TABLES = SYNCED_TABLE_NAMES;
+
+for (const name of SYNCED_TABLE_NAMES) {
+  const table = db.table(name);
+  table.hook('creating', (_pk, obj) => {
+    if (syncHooksSuspended) return;
+    const row = obj as Record<string, unknown>;
+    if (currentOwnerId && !row.ownerId) row.ownerId = currentOwnerId;
+    if (row._dirty === undefined) row._dirty = 1;
+    if (row._deleted === undefined) row._deleted = 0;
+    if (!row.updatedAt) row.updatedAt = new Date().toISOString();
+  });
+  table.hook('updating', mods => {
+    if (syncHooksSuspended) return; // leave the update untouched
+    const next: Record<string, unknown> = { ...mods, _dirty: 1 };
+    if (!('updatedAt' in next)) next.updatedAt = new Date().toISOString();
+    return next;
+  });
+}
 
 export { db };
 

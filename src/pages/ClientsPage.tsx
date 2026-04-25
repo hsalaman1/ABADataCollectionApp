@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { v4 as uuidv4 } from 'uuid'
 import { db, type Client, type TargetBehavior, type DataType, type BehaviorCategory } from '../db/database'
+import { softDelete, softDeleteWhere } from '../services/sync'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import BackupMenu from '../components/BackupMenu'
@@ -18,8 +19,8 @@ interface BehaviorFormData {
 
 export default function ClientsPage() {
   const navigate = useNavigate()
-  const clients = useLiveQuery(() => db.clients.orderBy('name').toArray())
-  const sessions = useLiveQuery(() => db.sessions.toArray())
+  const clients = useLiveQuery(() => db.clients.orderBy('name').filter(c => !c._deleted).toArray())
+  const sessions = useLiveQuery(() => db.sessions.filter(s => !s._deleted).toArray())
   const [deleteClient, setDeleteClient] = useState<Client | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [isTabletView, setIsTabletView] = useState(window.innerWidth >= 960)
@@ -83,8 +84,8 @@ export default function ClientsPage() {
 
   const handleDelete = async () => {
     if (deleteClient) {
-      await db.sessions.where('clientId').equals(deleteClient.id).delete()
-      await db.clients.delete(deleteClient.id)
+      await softDeleteWhere('sessions', 'clientId', deleteClient.id)
+      await softDelete('clients', deleteClient.id)
       if (selectedClient?.id === deleteClient.id) {
         setSelectedClient(null)
       }

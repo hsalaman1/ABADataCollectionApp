@@ -5,7 +5,7 @@ import { db } from '../db/database'
 
 export default function SelectClientPage() {
   const navigate = useNavigate()
-  const clients = useLiveQuery(() => db.clients.orderBy('name').toArray())
+  const clients = useLiveQuery(() => db.clients.orderBy('name').filter(c => !c._deleted).toArray())
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
